@@ -23,7 +23,7 @@ const VEH = { saloon: [1, 4, 2], estate: [1.1, 4, 3], mpv: [1.35, 6, 4], minibus
 async function newPage(browser, opts = {}) {
   const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 }, deviceScaleFactor: opts.dpr || 1 });
   const page = await ctx.newPage();
-  const log = { errors: [], posted: [], geocodeCalls: [], headers: [] };
+  const log = { errors: [], posted: [], geocodeCalls: [], headers: [], bookingError: null };
   page.on('pageerror', e => log.errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !/tiles\.test|ERR_/.test(m.text())) log.errors.push('console: ' + m.text()); });
   await page.route('http://tiles.test/**', r => r.abort());
@@ -34,6 +34,11 @@ async function newPage(browser, opts = {}) {
     if (ep === 'geocode') {
       const q = (url.searchParams.get('q') || '').toLowerCase(); log.geocodeCalls.push(q);
       const hit = PLACES.find(([k]) => q.includes(k)); return json({ results: hit ? hit[1] : [] });
+    }
+    if (ep === 'clock') {
+      const d = new Date(Date.now() + 60 * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+      const p2 = n => String(n).padStart(2, '0');
+      return json({ min_pickup: `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`, lead_minutes: 60 });
     }
     const b = req.postDataJSON();
     if (ep === 'quote') {
@@ -49,6 +54,7 @@ async function newPage(browser, opts = {}) {
       const lines = quoteOnly ? [] : [{ key: 'base', pence: 350 }, { key: 'distance', pence: Math.round(dist / MI * 240) }, ...(vias ? [{ key: 'vias', pence: vias * 150 }] : []), ...(b.luggage > 2 ? [{ key: 'luggage', pence: (b.luggage - 2) * 150 }] : []), ...(b.is_return ? [{ key: 'return', pence: 0 }] : [])];
       return json({ distance_m: dist, duration_s: Math.round(dist / 11), legs, geometry: g, estimated: false, quote_only: quoteOnly, reason: quoteOnly ? 'service' : null, lines, total_pence: quoteOnly ? null : price(veh), vehicles });
     }
+    if (ep === 'bookings' && log.bookingError) { const err = log.bookingError; log.bookingError = null; log.posted.push(b); return json(err, 400); }
     if (ep === 'bookings') { log.posted.push(b); return json({ reference: 'SB-TEST42', status: 'new', quote_only: ['wedding', 'tours'].includes(b.service), total_pence: 4200, registered: b.account_mode === 'register', signed_in: ['register', 'login'].includes(b.account_mode) }); }
     return json({ message: 'nope' }, 404);
   });
@@ -176,9 +182,11 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert.deepStrictEqual(radios, [['guest', 'Book as Guest', true], ['register', 'Register to manage your bookings on the go!', false], ['login', 'Sign in to book with your saved details', false]], 'three radio choices');
   assert(await page.locator('[data-sb-only=airport]').last().isVisible(), 'flight number shown for Airport Transfer');
   assert(await page.locator('[data-sb-password]').isHidden(), 'no password for guests');
+  assert(await page.locator('[data-sb-details]').first().isVisible(), 'guests type their name and mobile');
   await page.check('input[name=account_mode][value=register]'); assert(await page.locator('[data-sb-password]').isVisible(), 'register asks for a password');
+  assert(await page.locator('[data-sb-details]').first().isVisible(), 'new accounts type their name and mobile');
   await page.check('input[name=account_mode][value=login]'); assert(/Account email/.test(await page.textContent('[data-sb-email-label]')), 'login labels the email as the account email');
-  assert(await page.locator('[data-sb-saved-hint]').first().isVisible(), 'login says name and phone can be left blank');
+  assert(await page.locator('[data-sb-details]').first().isHidden(), 'sign in uses the saved name and mobile, so those fields are hidden');
   await page.check('[name=terms]');
   await page.click('[data-sb-submit]');
   const loginErrors = await page.textContent('[data-sb-errors]'); assert(/Enter your password/.test(loginErrors), 'login needs a password: ' + loginErrors);
@@ -241,10 +249,59 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert.strictEqual(await u.locator('input[name=account_mode][type=radio]').count(), 0, 'no guest/register/sign-in radios when signed in');
   assert(await u.locator('[data-sb-email]').isHidden(), 'account email not asked again');
   assert.strictEqual(await u.inputValue('[name=phone]'), '07700 900555', 'saved phone prefilled');
-  await u.check('[name=terms]'); await u.waitForTimeout(3100); await u.click('[data-sb-submit]'); await u.waitForSelector('.sb-done:not([hidden])');
-  assert.strictEqual(p4.log.posted[0].account_mode, 'account');
+  assert(await u.locator('[data-sb-details]').first().isHidden(), 'signed-in customers are not asked for name and mobile again');
+  await u.check('[name=terms]'); await u.waitForTimeout(3100);
+  p4.log.bookingError = { code: 'sb_need_details', message: 'We need your name and mobile number to finish this booking. Add them below.', data: { status: 400 } };
+  await u.click('[data-sb-submit]'); await u.waitForSelector('[data-sb-details] >> visible=true');
+  assert(/mobile number/.test(await u.textContent('[data-sb-errors]')), 'asks for the missing details');
+  await u.click('[data-sb-submit]'); await u.waitForSelector('.sb-done:not([hidden])');
+  assert.strictEqual(p4.log.posted[p4.log.posted.length - 1].account_mode, 'account');
   assert(p4.log.headers.every(h => h.nonce === 'abc123'), 'signed-in requests carry the REST nonce');
   await p4.ctx.close();
+
+  // ── Calendar and time picker stay right under their field, even on a page with a header and wide margins ──
+  const wide = await newPage(browser, { viewport: { width: 1600, height: 900 } }); const w = wide.page;
+  await w.goto(BASE + '/index.html'); await w.waitForSelector('.sb-stop');
+  await w.addStyleTag({ content: 'body{padding:300px 220px 40px 260px !important}' });
+  for (const sel of ['input.sb-date-alt', 'input.sb-time-alt']) {
+    await w.locator(sel).first().scrollIntoViewIfNeeded(); await w.locator(sel).first().click();
+    await w.waitForSelector('.flatpickr-calendar.open'); await w.waitForTimeout(450);
+    const g = await w.evaluate(s => { const i = document.querySelector(s).getBoundingClientRect(); const c = document.querySelector('.flatpickr-calendar.open').getBoundingClientRect(); return { dx: Math.round(c.left - i.left), dy: Math.round(c.top - i.bottom) }; }, sel);
+    assert(Math.abs(g.dx) <= 4 && g.dy >= 0 && g.dy <= 8, `${sel}: popup sits under its field (dx=${g.dx}, dy=${g.dy})`);
+    await w.keyboard.press('Escape'); await w.mouse.click(5, 5);
+  }
+  await wide.ctx.close();
+
+  // ── The prefilled pickup never starts out expired, and the live clock catches one that has gone stale ──
+  const c1 = await newPage(browser); const cl = c1.page;
+  await cl.clock.install({ time: new Date() });
+  await cl.goto(BASE + '/index.html'); await cl.waitForSelector('.sb-stop');
+  const startMin = await cl.evaluate(() => window.SB_CONFIG.minPickup);
+  const defWall = (await val(cl, 'pickup_date')) + 'T' + (await val(cl, 'pickup_time'));
+  assert(defWall > startMin, `default pickup (${defWall}) is later than the earliest allowed (${startMin})`);
+  await cl.clock.fastForward('02:00:00'); // two hours pass while the form is open
+  await cl.click('[data-sb-next]');
+  assert(/earliest available now/.test(await cl.textContent('[data-sb-errors]')), 'a stale pickup is caught with the earliest time: ' + await cl.textContent('[data-sb-errors]'));
+  await c1.ctx.close();
+
+  // ── The server refuses a too-soon pickup: the form moves it to the earliest time and goes back to step 1 ──
+  const c2 = await newPage(browser); const sv = c2.page;
+  await sv.goto(BASE + '/index.html'); await sv.waitForSelector('.sb-stop');
+  await sv.selectOption('[name=service]', 'corporate');
+  await suggest(sv, '.sb-stop--pickup', 'castle'); await pickFirst(sv, '.sb-stop--pickup');
+  await suggest(sv, '.sb-stop--dropoff', 'aberdeen'); await pickFirst(sv, '.sb-stop--dropoff');
+  await sv.waitForSelector('.sb-total');
+  await sv.click('[data-sb-next]'); await sv.waitForSelector('[data-panel="2"]:not([hidden])');
+  await sv.click('[data-sb-next]'); await sv.waitForSelector('[data-panel="3"]:not([hidden])');
+  await sv.fill('[name=name]', 'Test Person'); await sv.fill('[name=email]', 'test@example.com'); await sv.fill('[name=phone]', '07700 900123'); await sv.check('[name=terms]');
+  await sv.waitForTimeout(3100);
+  const earliest = await sv.evaluate(() => { const d = new Date(Date.now() + 90 * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; });
+  c2.log.bookingError = { code: 'sb_too_soon', message: 'We need at least 60 minutes notice.', data: { status: 400, earliest } };
+  await sv.click('[data-sb-submit]');
+  await sv.waitForSelector('[data-panel="1"]:not([hidden])');
+  assert(/moved it to the earliest time available/.test(await sv.textContent('[data-sb-errors]')), 'explains the pickup was moved');
+  assert.strictEqual((await val(sv, 'pickup_date')) + 'T' + (await val(sv, 'pickup_time')), earliest, 'pickup set to the earliest time the server allows');
+  await c2.ctx.close();
 
   // ── Mobile layout ──
   const m = await newPage(browser, { viewport: { width: 390, height: 844 }, dpr: 2 }); const mp = m.page;

@@ -61,6 +61,15 @@ final class Rest {
 		);
 		register_rest_route(
 			self::NS,
+			'/clock',
+			array(
+				'methods'             => \WP_REST_Server::READABLE,
+				'callback'            => array( self::class, 'clock' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			self::NS,
 			'/quote',
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
@@ -91,6 +100,30 @@ final class Rest {
 			return $rows;
 		}
 		return rest_ensure_response( array( 'results' => $rows ) );
+	}
+
+	/**
+	 * The earliest pickup right now, in the site's timezone. The form reads this when it loads
+	 * (so a cached page cannot offer times that have already gone) and again if a booking is refused.
+	 */
+	public static function clock() {
+		if ( ! RateLimit::allow( 'clock', 30, MINUTE_IN_SECONDS ) ) {
+			return self::too_many();
+		}
+		$cfg = Settings::get();
+		return rest_ensure_response(
+			array(
+				'min_pickup'   => self::earliest_local( $cfg ),
+				'lead_minutes' => (int) $cfg['min_lead_minutes'],
+			)
+		);
+	}
+
+	/** Now plus the notice period, rounded up to the next 5 minutes, as 'Y-m-dTH:i' in the site timezone. */
+	public static function earliest_local( array $cfg ): string {
+		$t = ( new \DateTimeImmutable( '+' . (int) $cfg['min_lead_minutes'] . ' minutes', wp_timezone() ) )->getTimestamp();
+		$t = (int) ceil( $t / 300 ) * 300;
+		return ( new \DateTimeImmutable( '@' . $t ) )->setTimezone( wp_timezone() )->format( 'Y-m-d\TH:i' );
 	}
 
 	public static function quote( \WP_REST_Request $req ) {
@@ -159,6 +192,15 @@ final class Rest {
 			$in['email'] = $profile['email'];
 			$in['name']  = trim( (string) ( $in['name'] ?? '' ) ) !== '' ? $in['name'] : $profile['name'];
 			$in['phone'] = trim( (string) ( $in['phone'] ?? '' ) ) !== '' ? $in['phone'] : $profile['phone'];
+		}
+
+		// Saved-details bookings use the account's name and mobile; if the account has none, ask for them.
+		if ( in_array( $mode, array( 'login', 'account' ), true ) ) {
+			$nm = trim( sanitize_text_field( (string) ( $in['name'] ?? '' ) ) );
+			$ph = trim( sanitize_text_field( (string) ( $in['phone'] ?? '' ) ) );
+			if ( mb_strlen( $nm ) < 2 || ! preg_match( '/^[0-9 +()\-]{7,25}$/', $ph ) ) {
+				return new \WP_Error( 'sb_need_details', __( 'We need your name and mobile number to finish this booking. Add them below.', 'sprint-booking' ), array( 'status' => 400 ) );
+			}
 		}
 
 		$contact = self::read_contact( $in );
@@ -359,12 +401,16 @@ final class Rest {
 			}
 			$earliest = new \DateTimeImmutable( '+' . (int) $cfg['min_lead_minutes'] . ' minutes', new \DateTimeZone( 'UTC' ) );
 			if ( $pickup < $earliest ) {
-				return self::bad(
+				$next = self::earliest_local( $cfg );
+				return new \WP_Error(
+					'sb_too_soon',
 					sprintf(
-						/* translators: %d: minutes of notice required */
-						__( 'We need at least %d minutes notice. Please call us for an immediate taxi.', 'sprint-booking' ),
-						(int) $cfg['min_lead_minutes']
-					)
+						/* translators: 1: minutes of notice required, 2: earliest pickup, e.g. "Fri 2 Oct, 20:05" */
+						__( 'We need at least %1$d minutes notice. The earliest pickup available now is %2$s. Please call us for an immediate taxi.', 'sprint-booking' ),
+						(int) $cfg['min_lead_minutes'],
+						( new \DateTimeImmutable( $next, wp_timezone() ) )->format( 'D j M, H:i' )
+					),
+					array( 'status' => 400, 'earliest' => $next )
 				);
 			}
 			if ( $pickup > new \DateTimeImmutable( '+1 year', new \DateTimeZone( 'UTC' ) ) ) {

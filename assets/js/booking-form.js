@@ -40,6 +40,8 @@
 		quoteTimer: null,
 		quoteAbort: null,
 		airportAuto: null, // { index, text } — the stop we filled in for an airport transfer.
+		needDetails: false, // A saved-details booking turned out to need a name or mobile.
+		pickupTouched: false,
 		startedAt: Date.now()
 	};
 
@@ -98,6 +100,8 @@
 				if ( ! res.ok ) {
 					var err = new Error( body && body.message ? body.message : 'Something went wrong. Please try again.' );
 					err.status = res.status;
+					err.code = body && body.code;
+					err.data = ( body && body.data ) || {};
 					throw err;
 				}
 				return body;
@@ -414,13 +418,27 @@
 
 	var pickers = {};
 
-	function splitMin() {
-		var parts = CFG.minPickup.split( 'T' );
-		var t = parts[ 1 ].split( ':' );
-		var h = parseInt( t[ 0 ], 10 );
-		var m = Math.ceil( parseInt( t[ 1 ], 10 ) / 5 ) * 5;
-		if ( m === 60 ) { m = 0; h = ( h + 1 ) % 24; }
-		return { date: parts[ 0 ], time: pad( h ) + ':' + pad( m ) };
+	// The notice period is measured against the real time, not the time the page was built:
+	// the form keeps its own clock, refreshed from the server (/clock) when it loads.
+	var clock = { min: CFG.minPickup, at: Date.now() };
+	var DEFAULT_BUFFER_MIN = 30; // The prefilled pickup is a little later than the earliest, so it does not expire while the customer fills the form.
+
+	function wallToDate( s ) {
+		var m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec( s );
+		return new Date( +m[ 1 ], +m[ 2 ] - 1, +m[ 3 ], +m[ 4 ], +m[ 5 ] );
+	}
+	function dateToWall( d ) {
+		return d.getFullYear() + '-' + pad( d.getMonth() + 1 ) + '-' + pad( d.getDate() ) + 'T' + pad( d.getHours() ) + ':' + pad( d.getMinutes() );
+	}
+	function roundUp5( d ) { var ms = 300000; return new Date( Math.ceil( d.getTime() / ms ) * ms ); }
+	function splitWall( s ) { var p = s.split( 'T' ); return { date: p[ 0 ], time: p[ 1 ] }; }
+
+	/** Earliest pickup right now, as 'YYYY-MM-DDTHH:mm' (site time). */
+	function minNow() {
+		return dateToWall( roundUp5( new Date( wallToDate( clock.min ).getTime() + ( Date.now() - clock.at ) ) ) );
+	}
+	function defaultPickup() {
+		return dateToWall( roundUp5( new Date( wallToDate( minNow() ).getTime() + DEFAULT_BUFFER_MIN * 60000 ) ) );
 	}
 
 	function pickupValue() {
@@ -430,9 +448,17 @@
 		return val( 'return_date' ) && val( 'return_time' ) ? val( 'return_date' ) + 'T' + val( 'return_time' ) : '';
 	}
 
+	function setPickup( wall ) {
+		var p = splitWall( wall );
+		if ( pickers.pickupDate ) { pickers.pickupDate.set( 'minDate', splitWall( minNow() ).date ); pickers.pickupDate.setDate( p.date, true ); }
+		if ( pickers.pickupTime ) { pickers.pickupTime.setDate( p.time, true ); }
+	}
+
 	function initPickers() {
-		var min = splitMin();
-		var base = { appendTo: root, disableMobile: false, locale: { firstDayOfWeek: 1 } };
+		var min = splitWall( minNow() );
+		var def = splitWall( defaultPickup() );
+		// static: the calendar is anchored to its own field, so it stays right under it wherever the page puts the form.
+		var base = { static: true, disableMobile: false, locale: { firstDayOfWeek: 1 } };
 
 		function date( name, opts ) {
 			var f = flatpickr( form.elements[ name ], Object.assign( {}, base, { dateFormat: 'Y-m-d', altInput: true, altFormat: 'D j M Y', altInputClass: 'sb-date-alt', monthSelectorType: 'dropdown' }, opts ) );
@@ -452,15 +478,37 @@
 				f.altInput.setAttribute( 'autocomplete', 'off' );
 			}
 		}
+		function touched() { state.pickupTouched = true; }
 
 		pickers.pickupDate = date( 'pickup_date', {
 			minDate: min.date,
-			defaultDate: min.date,
-			onChange: function ( sel, str ) { if ( pickers.returnDate ) { pickers.returnDate.set( 'minDate', str || min.date ); } }
+			defaultDate: def.date,
+			onChange: function ( sel, str ) {
+				touched();
+				if ( pickers.returnDate ) { pickers.returnDate.set( 'minDate', str || min.date ); }
+			}
 		} );
-		pickers.pickupTime = time( 'pickup_time', { defaultDate: min.time } );
+		pickers.pickupTime = time( 'pickup_time', { defaultDate: def.time, onChange: touched } );
 		pickers.returnDate = date( 'return_date', { minDate: min.date } );
 		pickers.returnTime = time( 'return_time', {} );
+	}
+
+	/** Ask the server what "now" is, so a cached page does not offer times that have already gone. */
+	function syncClock() {
+		return api( 'clock' ).then( function ( c ) {
+			if ( ! c || ! /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test( c.min_pickup ) ) { return; }
+			clock = { min: c.min_pickup, at: Date.now() };
+			if ( pickers.pickupDate ) { pickers.pickupDate.set( 'minDate', splitWall( minNow() ).date ); }
+			if ( ! state.pickupTouched ) { setPickup( defaultPickup() ); state.pickupTouched = false; }
+		} ).catch( function () { /* Keep the page's own clock. */ } );
+	}
+
+	/** Pickup too soon: move it to the earliest time available, go back to step 1 and say so. */
+	function pickupTooSoon( earliestWall ) {
+		var wall = earliestWall && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test( earliestWall ) ? earliestWall : minNow();
+		setPickup( wall );
+		goStep( 1 );
+		showErrors( [ 'Your pickup time had passed our notice period of ' + CFG.minLeadText + '. We have moved it to the earliest time available, ' + fmtDateTime( wall ) + '. Check it, or choose a later time, then continue. For an immediate taxi, please call us.' ] );
 	}
 
 	// ── Quote ───────────────────────────────────────────────────
@@ -742,16 +790,23 @@
 		return r ? r.value : 'guest';
 	}
 
+	/** Title, name and mobile are typed by guests and new accounts; saved-details bookings use the account's. */
+	function detailsVisible() {
+		var mode = accountMode();
+		if ( mode === 'guest' || mode === 'register' ) { return true; }
+		if ( state.needDetails ) { return true; }
+		return mode === 'account' && ! ( CFG.user && CFG.user.phone ); // A signed-in customer with no saved mobile.
+	}
+
 	function applyAccountMode() {
 		var mode = accountMode();
-		var usesSaved = mode === 'login' || mode === 'account';
+		var show = detailsVisible();
 
+		$$( '[data-sb-details]' ).forEach( function ( n ) { n.hidden = ! show; } );
 		$( '[data-sb-password]' ).hidden = ! ( mode === 'register' || mode === 'login' );
 		$( '[data-sb-email]' ).hidden = mode === 'account';
-		$$( '[data-sb-saved-hint]' ).forEach( function ( h ) { h.hidden = ! usesSaved || ( mode === 'account' && ! CFG.user ); } );
 
-		var label = $( '[data-sb-email-label]' );
-		label.textContent = mode === 'login' ? 'Account email' : 'Email';
+		$( '[data-sb-email-label]' ).textContent = mode === 'login' ? 'Account email' : 'Email';
 		$( '[data-sb-password-label]' ).textContent = mode === 'register' ? 'Choose a password' : 'Password';
 		$( '[data-sb-password-hint]' ).textContent = mode === 'register' ? 'At least 8 characters. You will be signed in, and can see your bookings any time.' : '';
 		form.elements.password.setAttribute( 'autocomplete', mode === 'register' ? 'new-password' : 'current-password' );
@@ -832,8 +887,8 @@
 			if ( ! p ) {
 				errors.push( 'Choose a pickup date and time.' );
 				mark( 'pickup_date' ); mark( 'pickup_time' );
-			} else if ( p < CFG.minPickup ) {
-				errors.push( 'Pickup must be at least ' + CFG.minLeadText + ' from now. Call us for an immediate taxi.' );
+			} else if ( p < minNow() ) {
+				errors.push( 'Pickup must be at least ' + CFG.minLeadText + ' from now. The earliest available now is ' + fmtDateTime( minNow() ) + '. Call us for an immediate taxi.' );
 				mark( 'pickup_date' ); mark( 'pickup_time' );
 			}
 			if ( form.elements.is_return.checked ) {
@@ -861,14 +916,17 @@
 			var name = val( 'name' ).trim();
 			var phone = val( 'phone' ).trim();
 			var email = val( 'email' ).trim();
-			var savedOk = mode === 'login' || mode === 'account';
 
-			if ( ! savedOk && name.length < 2 ) { errors.push( 'Enter your full name.' ); mark( 'name' ); }
-			if ( savedOk && name && name.length < 2 ) { errors.push( 'Enter your full name, or leave it blank to use the saved one.' ); mark( 'name' ); }
+			// The pickup may have slipped past the notice period while the form was being filled in.
+			var pv = pickupValue();
+			if ( pv && pv < minNow() ) { pickupTooSoon(); return false; }
+
+			// Guests and new accounts type their details; saved-details bookings only if something is missing.
+			if ( detailsVisible() ) {
+				if ( name.length < 2 ) { errors.push( 'Enter your full name.' ); mark( 'name' ); }
+				if ( ! PHONE_RE.test( phone ) ) { errors.push( 'Enter a phone number we can reach you on.' ); mark( 'phone' ); }
+			}
 			if ( mode !== 'account' && ! EMAIL_RE.test( email ) ) { errors.push( 'Enter a valid email address.' ); mark( 'email' ); }
-			if ( ! savedOk && ! PHONE_RE.test( phone ) ) { errors.push( 'Enter a phone number we can reach you on.' ); mark( 'phone' ); }
-			if ( savedOk && phone && ! PHONE_RE.test( phone ) ) { errors.push( 'Enter a valid phone number, or leave it blank to use the saved one.' ); mark( 'phone' ); }
-			if ( mode === 'account' && ! phone && ! ( CFG.user && CFG.user.phone ) ) { errors.push( 'Enter a mobile number so the driver can reach you.' ); mark( 'phone' ); }
 			if ( mode === 'register' && val( 'password' ).length < 8 ) { errors.push( 'Choose a password of at least 8 characters.' ); mark( 'password' ); }
 			if ( mode === 'login' && ! val( 'password' ) ) { errors.push( 'Enter your password.' ); mark( 'password' ); }
 			if ( ! form.elements.terms.checked ) { errors.push( 'Tick the box to agree to us using your details.' ); }
@@ -969,6 +1027,8 @@
 		} ).catch( function ( err ) {
 			btn.disabled = false;
 			btn.textContent = service().quoteOnly ? 'Send quote request' : 'Confirm booking';
+			if ( err.code === 'sb_too_soon' ) { pickupTooSoon( err.data && err.data.earliest ); return; }
+			if ( err.code === 'sb_need_details' ) { state.needDetails = true; applyAccountMode(); }
 			showErrors( [ err.message ] );
 		} );
 	}
@@ -1064,6 +1124,7 @@
 			form.elements.email.value = CFG.user.email || '';
 		}
 		initPickers();
+		syncClock();
 		renderStops();
 		renderSummary();
 		renderVehicles();

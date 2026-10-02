@@ -608,3 +608,8 @@
 .sb-app .flatpickr-calendar .flatpickr-current-month .numInputWrapper { width: 65px; flex: none; }
 .sb-app .flatpickr-calendar .flatpickr-current-month input.cur-year { padding: 0.35rem 0.4rem; text-align: left; }
 .sb-app .flatpickr-calendar .flatpickr-time input::selection { background: var(--sb-red-tint); color: var(--sb-red-dark); }
+
+/* Static calendars live inside a wrapper around the field: keep it full width and drop the calendar just below */
+.sb-app .flatpickr-wrapper { display: block; width: 100%; position: relative; }
+.sb-app .flatpickr-calendar.static { position: absolute; top: calc(100% + 4px); left: 0; margin: 0; }
+.sb-app .flatpickr-calendar.static.open { z-index: 40; }

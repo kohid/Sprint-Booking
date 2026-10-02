@@ -18,8 +18,8 @@ Inverness booking process, with the additions requested for Inverness Taxis.
    then car cards with a picture and a price each. Cars that cannot seat the party or hold the bags
    are disabled.
 3. **Passenger Details** — review card; radio choice of **Book as Guest**, **Register to manage your
-   bookings on the go!** or **Sign in to book with your saved details**; title, name, email, mobile;
-   password (register / sign in); flight number (Airport Transfer only); company (Corporate only);
+   bookings on the go!** or **Sign in to book with your saved details**; title, name, email, mobile
+   (guests and new accounts only — signed-in customers use their saved details); password (register / sign in); flight number (Airport Transfer only); company (Corporate only);
    special instructions; consent.
 
 Passengers and bags sit in step 2 rather than step 3 so that car availability and price
@@ -33,6 +33,14 @@ reflect them before the customer chooses.
   so any 2FA there cannot be bypassed). Name and mobile can be left blank to use the saved ones.
   Attempts are rate limited and failures never say whether the email exists.
 - A signed-in customer books against their account without being asked again. `[sprint_my_bookings]` lists their bookings.
+
+### Pickup time and the notice period
+
+The notice period is checked against the real time, not the time the page was built. The form asks the
+server for the earliest pickup (`GET /clock`) when it loads, keeps its own clock after that, and re-checks at
+the last step. The prefilled pickup is 30 minutes later than the earliest, so it does not expire while the form
+is filled in. If a pickup has still gone stale, the form moves it to the earliest available time, returns to
+step 1 and says so. The server enforces the same rule and returns the earliest time with its error.
 
 ### Address suggestions
 

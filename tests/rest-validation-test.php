@@ -7,7 +7,7 @@ define( 'ABSPATH', __DIR__ . '/' );
 define( 'SB_VERSION', 'test' );
 define( 'MINUTE_IN_SECONDS', 60 );
 
-class WP_Error { public $code; public $message; public function __construct( $c = '', $m = '' ) { $this->code = $c; $this->message = $m; } }
+class WP_Error { public $code; public $message; public $data; public function __construct( $c = '', $m = '', $d = null ) { $this->code = $c; $this->message = $m; $this->data = $d; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 function __( $s ) { return $s; }
 function get_option( $k, $d = false ) { return $d; }
@@ -48,6 +48,17 @@ t( 'return before pickup rejected', is_wp_error( call( 'read_options', $cfg, arr
 t( 'return after pickup accepted', is_array( call( 'read_options', $cfg, array_merge( $good, array( 'is_return' => true, 'return_at' => ( new DateTimeImmutable( '+3 days', wp_timezone() ) )->format( 'Y-m-d\TH:i' ) ) ), true ) ) );
 $q = call( 'read_options', $cfg, array( 'service' => 'airport', 'airport_direction' => 'arrival', 'passengers' => 6 ), false );
 t( 'quote without a vehicle picks one that seats everyone', is_array( $q ) && $q['vehicle'] === 'mpv' );
+
+// Notice period: the error says when the earliest pickup is, and the clock endpoint agrees with it.
+$err = call( 'read_options', $cfg, array_merge( $good, array( 'pickup_at' => $soon ) ), true );
+t( 'too-soon pickup has its own error code', is_wp_error( $err ) && 'sb_too_soon' === $err->code );
+t( 'too-soon error carries the earliest pickup', is_wp_error( $err ) && preg_match( '/^\d{4}-\d\d-\d\dT\d\d:\d\d$/', (string) ( $err->data['earliest'] ?? '' ) ) === 1 );
+$earliest = Rest::earliest_local( $cfg );
+$e_ts     = ( new DateTimeImmutable( $earliest, wp_timezone() ) )->getTimestamp();
+t( 'earliest pickup is at least the notice period away', $e_ts >= time() + (int) $cfg['min_lead_minutes'] * 60 - 1 );
+t( 'earliest pickup is rounded up to a 5-minute slot', 0 === (int) substr( $earliest, -2 ) % 5 );
+t( 'earliest pickup is no more than 5 minutes past the notice period', $e_ts <= time() + (int) $cfg['min_lead_minutes'] * 60 + 300 );
+t( 'a pickup at the earliest time is accepted', is_array( call( 'read_options', $cfg, array_merge( $good, array( 'pickup_at' => ( new DateTimeImmutable( '@' . ( $e_ts + 60 ) ) )->setTimezone( wp_timezone() )->format( 'Y-m-d\TH:i' ) ) ), true ) ) );
 
 // Airport direction, vulnerable solo traveller.
 t( 'airport transfer needs departure or arrival', is_wp_error( call( 'read_options', $cfg, array_diff_key( $good, array( 'airport_direction' => 1 ) ), true ) ) );

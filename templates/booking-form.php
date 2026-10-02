@@ -193,7 +193,7 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 					</select>
 				</div>
 				<div class="sb-field" data-sb-details>
-					<label for="<?php echo esc_attr( $uid ); ?>-name"><?php esc_html_e( 'Full name', 'sprint-booking' ); ?> <span class="sb-optional" data-sb-saved-hint hidden><?php esc_html_e( '(leave blank to use your saved name)', 'sprint-booking' ); ?></span></label>
+					<label for="<?php echo esc_attr( $uid ); ?>-name"><?php esc_html_e( 'Full name', 'sprint-booking' ); ?></label>
 					<input type="text" id="<?php echo esc_attr( $uid ); ?>-name" name="name" maxlength="100" autocomplete="name">
 				</div>
 			</div>
@@ -203,7 +203,7 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 					<input type="email" id="<?php echo esc_attr( $uid ); ?>-email" name="email" maxlength="100" autocomplete="email">
 				</div>
 				<div class="sb-field" data-sb-details>
-					<label for="<?php echo esc_attr( $uid ); ?>-phone"><?php esc_html_e( 'Mobile number', 'sprint-booking' ); ?> <span class="sb-optional" data-sb-saved-hint hidden><?php esc_html_e( '(leave blank to use your saved number)', 'sprint-booking' ); ?></span></label>
+					<label for="<?php echo esc_attr( $uid ); ?>-phone"><?php esc_html_e( 'Mobile number', 'sprint-booking' ); ?></label>
 					<input type="tel" id="<?php echo esc_attr( $uid ); ?>-phone" name="phone" maxlength="25" autocomplete="tel" inputmode="tel" placeholder="<?php esc_attr_e( 'Include +country code if abroad', 'sprint-booking' ); ?>">
 				</div>
 			</div>
