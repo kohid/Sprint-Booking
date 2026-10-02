@@ -507,3 +507,17 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 	.sb-d-shell.sb-d-full .sb-d-aside,
 	.sb-d-shell.sb-d-full .sb-d-main { height: auto; }
 }
+
+/* Dashboard pages card: the dotted route again, two stops. */
+.sb-ui-route { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1.5rem; align-items: center; margin: 0 0 0.5rem; padding: 1.25rem 0; border-bottom: 1px dashed var(--d-line2); position: relative; }
+.sb-ui-route__stops { margin: 0; padding: 0; list-style: none; display: grid; gap: 1.6rem; position: relative; }
+.sb-ui-route__stop { display: flex; align-items: center; gap: 0.9rem; }
+.sb-ui-route__stop div { display: grid; }
+.sb-ui-route__stop span { color: var(--d-muted); font-size: 0.9rem; }
+.sb-ui-route__stop a { color: var(--d-red-dark); font-size: 0.9rem; font-weight: 600; text-decoration: none; }
+.sb-ui-route__dot { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--d-line2); background: #fff; flex: none; position: relative; z-index: 1; }
+.sb-ui-route__stop.is-ready .sb-ui-route__dot { border-color: var(--d-red); background: var(--d-red); }
+.sb-ui-route__line { position: absolute; left: 6px; top: calc(1.25rem + 14px); height: calc(1.6rem + 14px); border-left: 3px dotted var(--d-red); opacity: 0.55; }
+.sb-ui-route__action { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; justify-content: flex-end; }
+.sb-ui-route__action p { margin: 0; color: var(--d-muted); max-width: 26rem; }
+@media (max-width: 900px) { .sb-ui-route { grid-template-columns: minmax(0, 1fr); } .sb-ui-route__action { justify-content: flex-start; } }

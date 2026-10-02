@@ -83,8 +83,10 @@ async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewpo
   await page.route('http://dash.test/**', async route => {
     const req = route.request(), url = new URL(req.url());
     const json = (b, s = 200) => route.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(b) });
-    if (url.pathname === '/') {
-      const data = mode === 'paged' ? 'data-shell="aside" data-view="bookings" data-overview-url="http://dash.test/overview/" data-bookings-url="http://dash.test/bookings/" data-full="site"' : mode === 'shell' ? 'data-shell="aside" data-view="overview"' : mode === 'overview' ? 'data-shell="none" data-view="overview" data-bookings-url="http://dash.test/bookings/"' : 'data-shell="none" data-view="bookings" ' + attrs;
+    if (url.pathname === '/' || url.pathname === '/overview/' || url.pathname === '/bookings/') {
+      const URLS = 'data-overview-url="http://dash.test/overview/" data-bookings-url="http://dash.test/bookings/"';
+      const pv = url.pathname === '/bookings/' ? 'bookings' : 'overview';
+      const data = mode === 'paged' ? `data-shell="aside" data-view="${pv === 'overview' && url.pathname === '/' ? 'bookings' : pv}" ${URLS} data-full="site"` : mode === 'shell' ? `data-shell="aside" data-view="${pv}" ${URLS}` : mode === 'overview' ? 'data-shell="none" data-view="overview" data-bookings-url="http://dash.test/bookings/"' : 'data-shell="none" data-view="bookings" ' + attrs;
       return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard harness</title><link rel="stylesheet" href="/dashboard.css"><style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#fff}</style></head><body><div class="sb-dash" data-sb-dash ${data}></div><script>window.SB_DASH=${JSON.stringify(CONFIG)}</script><script src="/dashboard.js"></script></body></html>` });
     }
     if (url.pathname === '/dashboard.css') return route.fulfill({ contentType: 'text/css', body: fs.readFileSync(ROOT + '/assets/css/dashboard.css') });
@@ -137,7 +139,8 @@ async function findRef(page, ref) {
   assert.strictEqual(await page.inputValue('select[aria-label=Status]'), 'needs_action', 'status filter preset');
   const badges = await page.locator('.sb-d-table .sb-d-badge').allTextContents();
   assert(badges.length > 0 && badges.every(b => ['New', 'Quote requested'].includes(b)), 'only rows that need action: ' + [...new Set(badges)]);
-  assert((await page.evaluate(() => location.hash)) === '#bookings', 'view is kept in the address bar');
+  assert.strictEqual(new URL(page.url()).pathname, '/bookings/', 'the tile opens the separate Bookings page');
+  assert.strictEqual(await page.evaluate(() => location.hash), '', 'no #hash views');
 
   // ── Search, sort, pagination ──
   await page.selectOption('select[aria-label=Status]', '');

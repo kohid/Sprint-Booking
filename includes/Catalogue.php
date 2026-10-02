@@ -55,7 +55,7 @@ final class Catalogue {
 				'tag'         => Dashboard::SHELL_TAG,
 				'title'       => __( 'Dashboard (all pages)', 'sprint-booking' ),
 				'audience'    => __( 'Staff', 'sprint-booking' ),
-				'description' => __( 'The whole dashboard in one place: a side menu with Overview and Bookings. Put it on its own page. For one page per view, make a page for each and give each the address of the other.', 'sprint-booking' ),
+				'description' => __( 'The whole dashboard in one place: a side menu with Overview and Bookings. Overview and Bookings are separate pages: put one shortcode on each (view="overview" and view="bookings"), or use Create the two dashboard pages above.', 'sprint-booking' ),
 				'page_title'  => __( 'Dispatch dashboard', 'sprint-booking' ),
 				'attributes'  => array(
 					array(
@@ -66,7 +66,7 @@ final class Catalogue {
 					array(
 						'name'    => 'overview_url',
 						'default' => __( 'none', 'sprint-booking' ),
-						'help'    => __( 'Address of the page holding the overview. Set this and bookings_url and the side menu moves between separate pages.', 'sprint-booking' ),
+						'help'    => __( 'Address of the page holding the overview. Normally found automatically from the page holding the shortcode.', 'sprint-booking' ),
 					),
 					array(
 						'name'    => 'bookings_url',

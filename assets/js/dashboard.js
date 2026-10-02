@@ -557,7 +557,7 @@
 			view: root.getAttribute( 'data-view' ) || 'overview',
 			bookingsUrl: root.getAttribute( 'data-bookings-url' ) || '',
 			overviewUrl: root.getAttribute( 'data-overview-url' ) || '',
-			paged: !! ( root.getAttribute( 'data-overview-url' ) && root.getAttribute( 'data-bookings-url' ) ),
+			paged: shell === 'aside', // The menu moves between pages; there is no in-page switching or #hash.
 			perPage: parseInt( root.getAttribute( 'data-per-page' ), 10 ) || 25,
 			filters: { q: '', status: root.getAttribute( 'data-status' ) || '', from: '', to: '', sort: 'newest' },
 			page: 1,
@@ -567,7 +567,6 @@
 			updateNav: function () {},
 			canFilter: function () { return app.shell === 'aside' || !! app.bookingsUrl; },
 			goBookings: function ( status ) {
-				if ( app.shell === 'aside' && ! app.paged ) { app.filters.status = status || ''; app.page = 1; show( 'bookings' ); return; }
 				if ( app.bookingsUrl ) { window.location.href = app.bookingsUrl + ( status ? ( app.bookingsUrl.indexOf( '?' ) > -1 ? '&' : '?' ) + 'status=' + encodeURIComponent( status ) : '' ); }
 			},
 			viewAll: function ( sort ) {
@@ -594,7 +593,6 @@
 			app.view = view;
 			title.textContent = TITLES[ view ];
 			Object.keys( navButtons ).forEach( function ( k ) { navButtons[ k ].setAttribute( 'aria-current', k === view ? 'page' : 'false' ); navButtons[ k ].classList.toggle( 'is-active', k === view ); } );
-			if ( shell === 'aside' && ! app.paged && window.history && history.replaceState ) { history.replaceState( null, '', '#' + view ); }
 			content.textContent = '';
 			( view === 'bookings' ? renderBookings : renderOverview )( app, content );
 		}
@@ -604,10 +602,9 @@
 			[ [ 'overview', 'grid', 'Overview' ], [ 'bookings', 'list', 'Bookings' ] ].forEach( function ( v ) {
 				var count = el( 'span', { 'class': 'sb-d-nav__count', hidden: true } );
 				var b = el( 'button', { type: 'button', 'class': 'sb-d-nav__item', onclick: function () {
-					if ( app.paged ) { window.location.href = v[ 0 ] === 'bookings' ? app.bookingsUrl : app.overviewUrl; return; }
-					if ( v[ 0 ] === 'bookings' ) { app.filters.status = ''; }
-					show( v[ 0 ] );
-				} }, [ icon( v[ 1 ] ), el( 'span', { text: v[ 2 ] } ), v[ 0 ] === 'bookings' ? count : null ] );
+					var url = v[ 0 ] === 'bookings' ? app.bookingsUrl : app.overviewUrl;
+					if ( url && v[ 0 ] !== app.view ) { window.location.href = url; }
+				}, title: ( v[ 0 ] === 'bookings' ? app.bookingsUrl : app.overviewUrl ) ? null : 'Create this page in Settings, Shortcodes' }, [ icon( v[ 1 ] ), el( 'span', { text: v[ 2 ] } ), v[ 0 ] === 'bookings' ? count : null ] );
 				b._count = count;
 				navButtons[ v[ 0 ] ] = b;
 				nav.appendChild( b );
@@ -626,8 +623,7 @@
 			root.appendChild( aside );
 			root.appendChild( el( 'div', { 'class': 'sb-d-main' }, [ head, content ] ) );
 
-			var wanted = ( window.location.hash || '' ).replace( '#', '' );
-			show( app.paged ? app.view : ( TITLES[ wanted ] ? wanted : app.view ) );
+			show( app.view );
 		} else {
 			root.classList.add( 'sb-d-bare' );
 			root.appendChild( head );

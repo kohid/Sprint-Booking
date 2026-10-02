@@ -21,11 +21,13 @@ Requires WordPress 6.0+ and PHP 8.0+. This is v0.1 — see `docs/booking-form-sp
 |---|---|---|
 | `[sprint_booking_form]` | everyone | the booking form |
 | `[sprint_my_bookings]` | customers | their own bookings |
-| `[sprint_dashboard view="bookings" overview_url="/dispatch/" bookings_url="/dispatch/bookings/"]` | staff | dashboard with side menu; with both URLs set, Overview and Bookings are separate pages |
+| `[sprint_dashboard view="bookings" overview_url="/dispatch/" bookings_url="/dispatch/bookings/"]` | staff | dashboard with side menu; Overview and Bookings are always separate pages; the menu finds them automatically (or set the URLs) |
 | `[sprint_dashboard_overview bookings_url="/bookings/"]` | staff | overview only |
 | `[sprint_dashboard_bookings status="needs_action" per_page="20"]` | staff | bookings list only |
 
 All dashboard shortcodes fill the browser's full width and height; add `fullscreen="no"` to keep one inside the page column.
+
+**Dashboard pages:** Settings → Shortcodes → "Create the two dashboard pages" makes `/dashboard/` and `/dashboard/bookings/`, each holding `[sprint_dashboard]`; the side menu links between them. There are no `#overview` / `#bookings` views.
 
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
 

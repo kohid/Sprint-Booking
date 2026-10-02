@@ -20,6 +20,7 @@ final class Admin {
 		add_action( 'admin_menu', array( self::class, 'menu' ) );
 		add_action( 'admin_init', array( self::class, 'register_settings' ) );
 		add_action( 'admin_post_sb_test_email', array( self::class, 'handle_test_email' ) );
+		add_action( 'admin_post_sb_create_dashboard', array( self::class, 'handle_create_dashboard' ) );
 		add_action( 'admin_post_sb_create_page', array( self::class, 'handle_create_page' ) );
 		add_action( 'admin_enqueue_scripts', array( self::class, 'enqueue' ) );
 	}
@@ -123,6 +124,44 @@ final class Admin {
 			exit;
 		}
 		wp_safe_redirect( add_query_arg( array( 'sb_page' => (int) $id ), admin_url( 'admin.php?page=sb-settings' ) ) );
+		exit;
+	}
+
+	/** Make the two staff pages: Dashboard (overview) and Dashboard > Bookings. */
+	public static function handle_create_dashboard(): void {
+		if ( ! current_user_can( self::SETTINGS_CAP ) || ! current_user_can( 'publish_pages' ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'sprint-booking' ), 403 );
+		}
+		check_admin_referer( 'sb_create_dashboard' );
+
+		$have = Dashboard::page_urls();
+		$home = 0;
+		if ( empty( $have['overview'] ) ) {
+			$home = (int) wp_insert_post(
+				array(
+					'post_type'    => 'page',
+					'post_status'  => 'publish',
+					'post_title'   => __( 'Dashboard', 'sprint-booking' ),
+					'post_name'    => 'dashboard',
+					'post_content' => '[' . Dashboard::SHELL_TAG . ' view="overview"]',
+				)
+			);
+		}
+		if ( empty( $have['bookings'] ) ) {
+			$parent = $home ?: url_to_postid( (string) ( $have['overview'] ?? '' ) );
+			wp_insert_post(
+				array(
+					'post_type'    => 'page',
+					'post_status'  => 'publish',
+					'post_title'   => __( 'Bookings', 'sprint-booking' ),
+					'post_name'    => 'bookings',
+					'post_parent'  => (int) $parent,
+					'post_content' => '[' . Dashboard::SHELL_TAG . ' view="bookings"]',
+				)
+			);
+		}
+		Dashboard::forget_pages();
+		wp_safe_redirect( add_query_arg( 'sb_dash', '1', admin_url( 'admin.php?page=sb-settings#shortcodes' ) ) );
 		exit;
 	}
 
@@ -281,6 +320,7 @@ final class Admin {
 		self::email_panel( $panel_open, $panel_close );
 
 		$panel_open( 'shortcodes', __( 'Shortcodes', 'sprint-booking' ), __( 'Every page of the plugin is a shortcode. In Elementor, add a Shortcode widget and paste one in. Or create a draft page here and open it in Elementor.', 'sprint-booking' ) );
+		self::dashboard_pages_card();
 		foreach ( Catalogue::all() as $sc ) {
 			self::shortcode_card( $sc );
 		}
@@ -309,6 +349,31 @@ final class Admin {
 			echo '</tbody></table><p class="sb-ui-help">' . esc_html__( '"Handed to mailer" means WordPress passed it to your SMTP plugin. If it still does not arrive, check the sender address is verified in Brevo and look in Brevo\'s transactional logs.', 'sprint-booking' ) . '</p>';
 		}
 		$close();
+	}
+
+	/** The two staff pages as a short route: Overview, then Bookings. Each stop shows whether its page exists. */
+	private static function dashboard_pages_card(): void {
+		$urls  = Dashboard::page_urls();
+		$stops = array(
+			'overview' => __( 'Overview', 'sprint-booking' ),
+			'bookings' => __( 'Bookings', 'sprint-booking' ),
+		);
+		echo '<div class="sb-ui-route"><div class="sb-ui-route__line" aria-hidden="true"></div><ol class="sb-ui-route__stops">';
+		foreach ( $stops as $key => $label ) {
+			$url = $urls[ $key ] ?? '';
+			echo '<li class="sb-ui-route__stop' . ( $url ? ' is-ready' : '' ) . '"><span class="sb-ui-route__dot" aria-hidden="true"></span><div><strong>' . esc_html( $label ) . '</strong>';
+			echo $url
+				? '<a href="' . esc_url( $url ) . '">' . esc_html( wp_parse_url( $url, PHP_URL_PATH ) ?: $url ) . '</a>'
+				: '<span>' . esc_html__( 'No page yet', 'sprint-booking' ) . '</span>';
+			echo '</div></li>';
+		}
+		echo '</ol><div class="sb-ui-route__action"><p>' . esc_html__( 'Overview and Bookings are separate pages. The side menu links between them.', 'sprint-booking' ) . '</p>';
+		if ( empty( $urls['overview'] ) || empty( $urls['bookings'] ) ) {
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+			wp_nonce_field( 'sb_create_dashboard' );
+			echo '<input type="hidden" name="action" value="sb_create_dashboard"><button class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Create the two dashboard pages', 'sprint-booking' ) . '</button></form>';
+		}
+		echo '</div></div>';
 	}
 
 	/** @param array<string,mixed> $sc One entry of Catalogue::all(). */
@@ -350,6 +415,9 @@ final class Admin {
 		}
 		if ( isset( $_GET['settings-updated'] ) && 'true' === $_GET['settings-updated'] ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Settings saved.', 'sprint-booking' ) . '</p></div>';
+		}
+		if ( isset( $_GET['sb_dash'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Dashboard pages created.', 'sprint-booking' ) . '</p></div>';
 		}
 		if ( isset( $_GET['sb_page'] ) ) {
 			$id = sanitize_text_field( wp_unslash( $_GET['sb_page'] ) );

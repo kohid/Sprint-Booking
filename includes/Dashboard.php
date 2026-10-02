@@ -36,6 +36,8 @@ final class Dashboard {
 		add_shortcode( self::SHELL_TAG, array( self::class, 'shell' ) );
 		add_shortcode( self::OVERVIEW_TAG, array( self::class, 'overview' ) );
 		add_shortcode( self::BOOKINGS_TAG, array( self::class, 'bookings' ) );
+		add_action( 'save_post_page', array( self::class, 'forget_pages' ) );
+		add_action( 'deleted_post', array( self::class, 'forget_pages' ) );
 	}
 
 	// ── Shortcodes ────────────────────────────────────────────────
@@ -52,13 +54,22 @@ final class Dashboard {
 			self::SHELL_TAG
 		);
 		$view = in_array( $a['view'], array( 'overview', 'bookings' ), true ) ? $a['view'] : 'overview';
+
+		// Each view is its own page. Addresses not given here are found from the pages that hold the shortcode.
+		$found = self::page_urls();
+		$urls  = array(
+			'overview' => esc_url_raw( (string) $a['overview_url'] ) ?: ( $found['overview'] ?? '' ),
+			'bookings' => esc_url_raw( (string) $a['bookings_url'] ) ?: ( $found['bookings'] ?? '' ),
+		);
+		$urls[ $view ] = $urls[ $view ] ?: self::current_url();
+
 		return self::guarded(
 			static fn() => self::mount(
 				'aside',
 				$view,
 				array(
-					'overview-url' => esc_url_raw( (string) $a['overview_url'] ),
-					'bookings-url' => esc_url_raw( (string) $a['bookings_url'] ),
+					'overview-url' => $urls['overview'],
+					'bookings-url' => $urls['bookings'],
 					'full'         => self::yes( $a['fullscreen'] ) ? 'site' : '',
 				)
 			)
@@ -92,6 +103,50 @@ final class Dashboard {
 				)
 			)
 		);
+	}
+
+	public const PAGES_TRANSIENT = 'sb_dash_pages';
+
+	/**
+	 * Addresses of the pages that hold [sprint_dashboard], by the view each one shows.
+	 *
+	 * @return array{overview?:string,bookings?:string}
+	 */
+	public static function page_urls(): array {
+		$cached = get_transient( self::PAGES_TRANSIENT );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+		$out  = array();
+		$base = array(
+			'post_type'      => 'page',
+			'post_status'    => 'publish',
+			'posts_per_page' => 20,
+			'no_found_rows'  => true,
+			'fields'         => 'ids',
+		);
+		$ids  = array_merge(
+			(array) ( new \WP_Query( $base + array( 's' => '[' . self::SHELL_TAG ) ) )->posts,
+			(array) ( new \WP_Query( $base + array( 'meta_query' => array( array( 'key' => '_elementor_data', 'value' => '[' . self::SHELL_TAG, 'compare' => 'LIKE' ) ) ) ) )->posts // phpcs:ignore WordPress.DB.SlowDBQuery
+		);
+		foreach ( array_unique( array_map( 'intval', $ids ) ) as $id ) {
+			$post = get_post( $id );
+			$text = $post ? (string) $post->post_content . ' ' . (string) get_post_meta( $id, '_elementor_data', true ) : '';
+			// Elementor stores the shortcode inside JSON, so quotes may be escaped.
+			if ( ! preg_match( '/\[' . self::SHELL_TAG . '(?![_a-z])([^\]]*)\]/', $text, $m ) ) {
+				continue;
+			}
+			$view = preg_match( '/view\s*=\s*\\?[\"\']?bookings/', $m[1] ) ? 'bookings' : 'overview';
+			if ( empty( $out[ $view ] ) ) {
+				$out[ $view ] = (string) get_permalink( $id );
+			}
+		}
+		set_transient( self::PAGES_TRANSIENT, $out, 12 * HOUR_IN_SECONDS );
+		return $out;
+	}
+
+	public static function forget_pages(): void {
+		delete_transient( self::PAGES_TRANSIENT );
 	}
 
 	private static function yes( $v ): bool {
