@@ -13,6 +13,7 @@ require __DIR__ . '/../includes/Rest.php';
 require __DIR__ . '/../includes/Stats.php';
 require __DIR__ . '/../includes/Presenter.php';
 require __DIR__ . '/../includes/Dashboard.php';
+require __DIR__ . '/../includes/Roles.php';
 
 use SprintBooking\BookingQuery;
 use SprintBooking\Presenter;
@@ -137,6 +138,15 @@ t( 'spaces around the equals sign', 'bookings' === Dashboard::view_in( '[sprint_
 t( 'the overview-only shortcode counts as overview', 'overview' === Dashboard::view_in( '[sprint_dashboard_overview]' ) );
 t( 'the bookings-only shortcode counts as bookings', 'bookings' === Dashboard::view_in( '[sprint_dashboard_bookings status="new"]' ) );
 t( 'other shortcodes and text give none', '' === Dashboard::view_in( '[sprint_booking_form] [sprint_dashboardx]' ) );
+
+// ── Dashboard roles ──
+use SprintBooking\Roles;
+$known = array( 'administrator', 'editor', 'subscriber', 'sb_customer', 'sb_dispatcher' );
+t( 'only existing roles are kept', array( 'editor', 'sb_dispatcher' ) === Roles::clean( array( 'editor', 'ghost', 'sb_dispatcher' ), $known ) );
+t( 'customers can never be given access', array() === Roles::clean( array( 'sb_customer' ), $known ) );
+t( 'administrator is implicit, not stored', array() === Roles::clean( array( 'administrator' ), $known ) );
+t( 'repeats and junk values are dropped', array( 'editor' ) === Roles::clean( array( 'editor', 'EDITOR', 5, array(), 'editor' ), $known ) );
+t( 'a non-list gives an empty list', array() === Roles::clean( null, $known ) && array() === Roles::clean( 'editor', array( 'x' ) ) );
 
 echo $fail ? "\n$fail failed\n" : "\nAll passed\n";
 exit( $fail ? 1 : 0 );

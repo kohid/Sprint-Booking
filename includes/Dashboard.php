@@ -193,7 +193,7 @@ final class Dashboard {
 	private static function guarded( callable $render ): string {
 		if ( ! is_user_logged_in() ) {
 			ob_start();
-			echo '<div class="sb-dash-notice"><p><strong>' . esc_html__( 'Staff sign-in', 'sprint-booking' ) . '</strong></p><p>' . esc_html__( 'Sign in to open the dashboard.', 'sprint-booking' ) . '</p>';
+			echo '<div class="sb-dash-notice"><p><strong>' . esc_html__( 'Dashboard sign-in', 'sprint-booking' ) . '</strong></p><p>' . esc_html__( 'Sign in to open the dashboard.', 'sprint-booking' ) . '</p>';
 			wp_login_form( array( 'redirect' => self::current_url() ) );
 			echo '</div>';
 			self::enqueue_notice_style();
@@ -201,7 +201,7 @@ final class Dashboard {
 		}
 		if ( ! Roles::can_manage() ) {
 			self::enqueue_notice_style();
-			return '<div class="sb-dash-notice"><p><strong>' . esc_html__( 'No access', 'sprint-booking' ) . '</strong></p><p>' . esc_html__( 'Your account cannot open the dashboard. Ask an administrator to give you the Taxi dispatcher role.', 'sprint-booking' ) . '</p></div>';
+			return '<div class="sb-dash-notice"><p><strong>' . esc_html__( 'No access', 'sprint-booking' ) . '</strong></p><p>' . esc_html__( 'Your account cannot open the dashboard. Ask an administrator to give your role access in Settings.', 'sprint-booking' ) . '</p></div>';
 		}
 		return $render();
 	}

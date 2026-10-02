@@ -36,6 +36,7 @@ final class Settings {
 			'routing_base_url'        => 'https://router.project-osrm.org',
 			'geocoder_url'            => 'https://photon.komoot.io/api',
 			'allow_accounts'          => true,
+			'dashboard_roles'         => array( 'sb_dispatcher' ),
 			'voice'                   => array(
 				'enabled'          => false,
 				'greeting'         => 'Thank you for calling Inverness Taxis. How can I help you today?',
@@ -66,6 +67,9 @@ final class Settings {
 		$stored = is_array( $stored ) ? $stored : array();
 		$cfg    = array_replace_recursive( self::defaults(), $stored );
 
+		if ( isset( $stored['dashboard_roles'] ) && is_array( $stored['dashboard_roles'] ) ) {
+			$cfg['dashboard_roles'] = array_values( $stored['dashboard_roles'] ); // A saved list replaces the default, not merges with it.
+		}
 		$cfg['max_vias'] = max( 1, min( self::MAX_VIAS_LIMIT, (int) $cfg['max_vias'] ) );
 		return $cfg;
 	}
@@ -101,6 +105,7 @@ final class Settings {
 		$out['geocoder_url']  = $geo ? untrailingslashit( $geo ) : $d['geocoder_url'];
 		$out['allow_accounts'] = ! empty( $in['allow_accounts'] );
 
+		$out['dashboard_roles'] = Roles::clean( $in['dashboard_roles'] ?? array(), array_keys( wp_roles()->get_names() ) );
 		$v      = (array) ( $in['voice'] ?? array() );
 		$out['voice'] = array(
 			'enabled'         => ! empty( $v['enabled'] ),

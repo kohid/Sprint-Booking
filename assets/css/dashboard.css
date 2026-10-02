@@ -571,3 +571,5 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 .sb-chat__row dd { margin: 0; font-weight: 600; color: var(--d-ink); text-align: right; }
 @media (max-width: 1000px) { .sb-chat { grid-template-columns: minmax(0, 1fr); } .sb-chat__sheet { position: static; } }
 @media (prefers-reduced-motion: reduce) { .sb-chat__typing span { animation: none; opacity: 0.6; } .sb-chat__log { scroll-behavior: auto; } }
+
+.sb-ui-checks { display: grid; gap: 0.5rem; }

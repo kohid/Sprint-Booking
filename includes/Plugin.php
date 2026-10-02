@@ -18,6 +18,14 @@ final class Plugin {
 		Shortcode::init();
 		MyBookings::init();
 		Dashboard::init();
+		add_action(
+			'update_option_' . Settings::OPTION,
+			static function ( $old, $new ): void {
+				Roles::sync( is_array( $new ) && is_array( $new['dashboard_roles'] ?? null ) ? $new['dashboard_roles'] : array() );
+			},
+			10,
+			2
+		);
 		add_action( 'sb_booking_status_changed', array( Mailer::class, 'status_changed' ), 10, 2 );
 		Updater::init(); // Not admin-only: WordPress cron runs the update check too.
 

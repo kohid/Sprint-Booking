@@ -322,6 +322,14 @@ final class Admin {
 		$row( 'sb-mail', __( 'Send booking emails to', 'sprint-booking' ), '<input id="sb-mail" class="sb-ui-input" name="' . esc_attr( $name ) . '[notify_email]" type="email" value="' . esc_attr( $c['notify_email'] ) . '">', __( 'Leave empty to use the site admin email.', 'sprint-booking' ) );
 		$row( 'sb-route', __( 'Routing service URL', 'sprint-booking' ), '<input id="sb-route" class="sb-ui-input" name="' . esc_attr( $name ) . '[routing_base_url]" type="url" value="' . esc_attr( $c['routing_base_url'] ) . '">', __( 'An OSRM-compatible HTTPS service. The default is the public demo server, for testing only. Use your own or a paid provider before launch.', 'sprint-booking' ) );
 		$row( 'sb-geo', __( 'Address suggestions URL', 'sprint-booking' ), '<input id="sb-geo" class="sb-ui-input" name="' . esc_attr( $name ) . '[geocoder_url]" type="url" value="' . esc_attr( $c['geocoder_url'] ) . '">', __( 'A Photon-compatible HTTPS service used while typing. The default is a free public server, for testing only. Self-host Photon or use a paid service before launch.', 'sprint-booking' ) );
+		$boxes = '';
+		foreach ( wp_roles()->get_names() as $slug => $label ) {
+			if ( in_array( $slug, array( 'sb_customer', 'administrator' ), true ) ) {
+				continue;
+			}
+			$boxes .= '<label class="sb-ui-check"><input type="checkbox" name="' . esc_attr( $name ) . '[dashboard_roles][]" value="' . esc_attr( $slug ) . '"' . checked( in_array( $slug, (array) $c['dashboard_roles'], true ), true, false ) . '> ' . esc_html( translate_user_role( $label ) ) . '</label>';
+		}
+		$row( 'sb-roles', __( 'Who can open the dashboard', 'sprint-booking' ), '<div class="sb-ui-checks"><label class="sb-ui-check"><input type="checkbox" checked disabled> ' . esc_html__( 'Administrator (always)', 'sprint-booking' ) . '</label>' . $boxes . '</div>', __( 'Pick the roles allowed to see the dashboard pages and change booking statuses. Everyone else, including customers, sees a "No access" notice. "Taxi dispatcher" is a role made for this.', 'sprint-booking' ) );
 		$row( 'sb-accounts', __( 'Customer accounts', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-accounts" type="checkbox" name="' . esc_attr( $name ) . '[allow_accounts]" value="1"' . checked( ! empty( $c['allow_accounts'] ), true, false ) . '> ' . esc_html__( 'Let customers register and sign in on the booking form', 'sprint-booking' ) . '</label>' );
 		$panel_close();
 
@@ -473,7 +481,7 @@ final class Admin {
 	/** @param array<string,mixed> $sc One entry of Catalogue::all(). */
 	private static function shortcode_card( array $sc ): void {
 		$basic = '[' . $sc['tag'] . ']';
-		echo '<article class="sb-ui-sc"><div class="sb-ui-sc__top"><h3 class="sb-ui-sc__title">' . esc_html( $sc['title'] ) . ' <span class="sb-d-badge sb-d-badge--' . ( 'Staff' === $sc['audience'] ? 'primary' : 'success' ) . '">' . esc_html( $sc['audience'] ) . '</span></h3>';
+		echo '<article class="sb-ui-sc"><div class="sb-ui-sc__top"><h3 class="sb-ui-sc__title">' . esc_html( $sc['title'] ) . ' <span class="sb-d-badge sb-d-badge--' . ( __( 'Selected roles', 'sprint-booking' ) === $sc['audience'] ? 'primary' : 'success' ) . '">' . esc_html( $sc['audience'] ) . '</span></h3>';
 		echo '<div class="sb-ui-sc__code"><code>' . esc_html( $basic ) . '</code><button type="button" class="sb-d-btn sb-d-btn--light" data-sb-copy="' . esc_attr( $basic ) . '">' . esc_html__( 'Copy', 'sprint-booking' ) . '</button>';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( 'sb_create_page' );

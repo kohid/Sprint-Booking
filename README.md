@@ -14,7 +14,7 @@ Requires WordPress 6.0+ and PHP 8.0+. This is v0.1 — see `docs/booking-form-sp
    - Preselect one: `[sprint_booking_form service="golf"]`
    - Customers' own bookings: put `[sprint_my_bookings]` on a page ("My bookings").
 3. **Taxi Bookings → Settings**: replace the temporary tariff with your real rates, set the email that receives bookings, choose a photo for each car (otherwise a simple illustration is shown), and set production routing and address-suggestion services.
-4. **Taxi Bookings → Dashboard / Bookings**: today's pickups, what needs action, a 14-day chart, search and filters, CSV export, and a side panel to change a booking's status. Needs the `sb_manage_bookings` capability (administrators, or the **Taxi dispatcher** role).
+4. **Taxi Bookings → Dashboard / Bookings**: today's pickups, what needs action, a 14-day chart, search and filters, CSV export, and a side panel to change a booking's status. Access is by role: **Settings → Booking rules → Who can open the dashboard** lists every role on the site; tick the ones that may see the dashboard and change statuses. Administrators always can; customers never can. The **Taxi dispatcher** role is made for this. (Under the hood the roles get the `sb_manage_bookings` capability.)
 5. **Settings → Shortcodes** lists every shortcode with attributes, a Copy button, the pages that use it, and a "Create page" button (makes a draft). In Elementor, drop a Shortcode widget on a page and paste one in.
 
 | Shortcode | For | Shows |
@@ -40,7 +40,7 @@ Phone bookings use the same pricing, limits and emails as the website form, are 
 
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
 
-The dashboard shortcodes show a sign-in form to visitors and a notice to accounts without access; the data itself is only served to staff by the REST API.
+The dashboard shortcodes show a sign-in form to visitors and a "No access" notice to signed-in users whose role is not ticked; the data itself is only served to staff by the REST API.
 
 ## How the price is worked out
 

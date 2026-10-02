@@ -54,7 +54,7 @@ final class Catalogue {
 			array(
 				'tag'         => Dashboard::SHELL_TAG,
 				'title'       => __( 'Dashboard (all pages)', 'sprint-booking' ),
-				'audience'    => __( 'Staff', 'sprint-booking' ),
+				'audience'    => __( 'Selected roles', 'sprint-booking' ),
 				'description' => __( 'The whole dashboard in one place: a side menu with Overview and Bookings. Overview and Bookings are separate pages: put one shortcode on each (view="overview" and view="bookings"), or use Create the two dashboard pages above.', 'sprint-booking' ),
 				'page_title'  => __( 'Dispatch dashboard', 'sprint-booking' ),
 				'attributes'  => array(
@@ -84,7 +84,7 @@ final class Catalogue {
 			array(
 				'tag'         => Dashboard::OVERVIEW_TAG,
 				'title'       => __( 'Dashboard: Overview', 'sprint-booking' ),
-				'audience'    => __( 'Staff', 'sprint-booking' ),
+				'audience'    => __( 'Selected roles', 'sprint-booking' ),
 				'description' => __( 'Only the overview: today\'s pickups, what needs action, revenue, a 14-day chart, the next pickups and the latest bookings. For a page of its own.', 'sprint-booking' ),
 				'page_title'  => __( 'Dashboard overview', 'sprint-booking' ),
 				'attributes'  => array(
@@ -104,7 +104,7 @@ final class Catalogue {
 			array(
 				'tag'         => Dashboard::BOOKINGS_TAG,
 				'title'       => __( 'Dashboard: Bookings', 'sprint-booking' ),
-				'audience'    => __( 'Staff', 'sprint-booking' ),
+				'audience'    => __( 'Selected roles', 'sprint-booking' ),
 				'description' => __( 'Only the bookings list: search, filter by status and date, open any booking to see the route, fare and contact details, and change its status. For a page of its own.', 'sprint-booking' ),
 				'page_title'  => __( 'Dashboard bookings', 'sprint-booking' ),
 				'attributes'  => array(
