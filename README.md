@@ -34,11 +34,30 @@ The defaults use free public services that forbid heavy use. Replace them first:
 
 Also: set a real tariff, add payment, and check the privacy policy covers the details collected.
 
+## Updates and releases
+
+The plugin updates itself from this repository's GitHub Releases, so a new version appears as the
+normal **Update now** notice on the WordPress Plugins screen. Use **Check for updates** on the plugin's
+row to refresh the check straight away (it is otherwise cached for six hours).
+
+To publish a new version:
+
+1. Change `Version:` in `sprint-booking.php` **and** `SB_VERSION` to the new number, and commit.
+2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+3. The **Release** workflow checks the tag matches the plugin version, runs the tests, builds
+   `sprint-booking.zip` and publishes the release. Sites then offer the update.
+
+To build the zip locally instead: `bin/build-release.sh` (writes `dist/sprint-booking.zip` from the committed files).
+The zip keeps everything in a `sprint-booking/` folder, so an update replaces the plugin rather than adding a second copy.
+
+The updater only reads a **public** repository. If you make the repository private, updates will stop being offered.
+
 ## Tests
 
 ```bash
 php tests/pricing-test.php            # fare calculation
 php tests/rest-validation-test.php    # server-side validation (WordPress stubbed)
+php tests/updater-test.php            # GitHub update decisions
 ```
 
 A browser test of the form is in `tests/e2e/` (see its README).
@@ -47,7 +66,8 @@ A browser test of the form is in `tests/e2e/` (see its README).
 
 ```
 sprint-booking.php   bootstrap and autoloader
-includes/            Pricing, Routing, Geocoder, Rest, Bookings, Mailer, Admin, Settings, Shortcode…
+includes/            Pricing, Routing, Geocoder, Rest, Bookings, Mailer, Admin, Settings, Shortcode, Updater…
+bin/                 build-release.sh
 templates/           booking-form.php
 assets/              css/, js/, vendor/leaflet (BSD-2, bundled)
 tests/               CLI tests and the browser test

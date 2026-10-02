@@ -1,0 +1,36 @@
+name: Release
+
+# Push a tag like v0.2.0 to publish a release. The plugin's Updater reads the latest
+# release and shows "update available" on the WordPress Plugins screen.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match the plugin version
+        run: |
+          version=$(sed -nE 's/^ \* Version:[[:space:]]*([0-9][^[:space:]]*).*/\1/p' sprint-booking.php | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match plugin version $version" >&2
+            exit 1
+          fi
+
+      - name: Build (lint, tests, zip)
+        run: bin/build-release.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/sprint-booking.zip \
+            --title "Sprint Booking ${GITHUB_REF_NAME#v}" \
+            --generate-notes

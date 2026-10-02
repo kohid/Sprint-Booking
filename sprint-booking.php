@@ -7,6 +7,7 @@
  * Requires PHP:      8.0
  * License:           GPL v2 or later
  * Text Domain:       sprint-booking
+ * Update URI:        https://github.com/kohid/Sprint-Booking
  *
  * @package SprintBooking
  */

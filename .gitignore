@@ -1,8 +1,9 @@
 .DS_Store
 Thumbs.db
 node_modules/
-vendor/
+/vendor/
 *.log
 .env
 tests/e2e/out/
 .claude/settings.local.json
+/dist/
