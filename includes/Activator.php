@@ -19,6 +19,7 @@ final class Activator {
 	public static function activate(): void {
 		self::create_tables();
 		Accounts::add_role();
+		Roles::add();
 	}
 
 	/** Runs on every load; only does work when the stored schema version lags the constant. */
@@ -26,6 +27,7 @@ final class Activator {
 		if ( get_option( 'sb_db_version' ) !== SB_DB_VERSION ) {
 			self::create_tables();
 			Accounts::add_role();
+			Roles::add();
 		}
 	}
 

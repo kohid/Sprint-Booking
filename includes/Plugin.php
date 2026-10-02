@@ -13,8 +13,10 @@ final class Plugin {
 
 	public static function init(): void {
 		add_action( 'rest_api_init', array( Rest::class, 'register' ) );
+		add_action( 'rest_api_init', array( AdminRest::class, 'register' ) );
 		Shortcode::init();
 		MyBookings::init();
+		Dashboard::init();
 		Updater::init(); // Not admin-only: WordPress cron runs the update check too.
 
 		if ( is_admin() ) {

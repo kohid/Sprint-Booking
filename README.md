@@ -14,7 +14,18 @@ Requires WordPress 6.0+ and PHP 8.0+. This is v0.1 — see `docs/booking-form-sp
    - Preselect one: `[sprint_booking_form service="golf"]`
    - Customers' own bookings: put `[sprint_my_bookings]` on a page ("My bookings").
 3. **Taxi Bookings → Settings**: replace the temporary tariff with your real rates, set the email that receives bookings, choose a photo for each car (otherwise a simple illustration is shown), and set production routing and address-suggestion services.
-4. **Taxi Bookings → Bookings**: see new bookings and change their status.
+4. **Taxi Bookings → Dashboard / Bookings**: today's pickups, what needs action, a 14-day chart, search and filters, CSV export, and a side panel to change a booking's status. Needs the `sb_manage_bookings` capability (administrators, or the **Taxi dispatcher** role).
+5. **Settings → Shortcodes** lists every shortcode with attributes, a Copy button, the pages that use it, and a "Create page" button (makes a draft). In Elementor, drop a Shortcode widget on a page and paste one in.
+
+| Shortcode | For | Shows |
+|---|---|---|
+| `[sprint_booking_form]` | everyone | the booking form |
+| `[sprint_my_bookings]` | customers | their own bookings |
+| `[sprint_dashboard view="overview"]` | staff | whole dashboard with side menu |
+| `[sprint_dashboard_overview bookings_url="/bookings/"]` | staff | overview only |
+| `[sprint_dashboard_bookings status="needs_action" per_page="20"]` | staff | bookings list only |
+
+The dashboard shortcodes show a sign-in form to visitors and a notice to accounts without access; the data itself is only served to staff by the REST API.
 
 ## How the price is worked out
 
@@ -60,9 +71,11 @@ php tests/pricing-test.php            # fare calculation
 php tests/rest-validation-test.php    # server-side validation (WordPress stubbed)
 php tests/updater-test.php            # GitHub update decisions
 php tests/geocoder-test.php           # address suggestion parsing
+php tests/dashboard-test.php          # filters, overview numbers, row presentation
+php tests/catalogue-test.php          # Settings -> Shortcodes matches registered shortcodes
 ```
 
-A browser test of the form is in `tests/e2e/` (see its README).
+Browser tests of the form (`e2e.js`) and dashboard (`dashboard-e2e.js`) are in `tests/e2e/` (see its README).
 
 ## Structure
 

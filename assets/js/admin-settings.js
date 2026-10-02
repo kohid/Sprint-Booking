@@ -27,3 +27,54 @@
 		$( this ).prop( 'hidden', true );
 	} );
 }( jQuery ) );
+
+/**
+ * Settings screen: tabs (remembered between saves) and copy-to-clipboard for shortcodes.
+ */
+( function () {
+	'use strict';
+
+	var tabs = Array.prototype.slice.call( document.querySelectorAll( '[data-sb-tab]' ) );
+	var panels = Array.prototype.slice.call( document.querySelectorAll( '[data-sb-panel]' ) );
+	var savebar = document.querySelector( '[data-sb-savebar]' );
+	if ( ! tabs.length ) { return; }
+
+	function remembered() {
+		try { return window.localStorage.getItem( 'sbSettingsTab' ); } catch ( e ) { return null; }
+	}
+
+	function show( key, remember ) {
+		if ( ! tabs.some( function ( t ) { return t.getAttribute( 'data-sb-tab' ) === key; } ) ) { key = tabs[ 0 ].getAttribute( 'data-sb-tab' ); }
+		tabs.forEach( function ( t ) { t.setAttribute( 'aria-selected', t.getAttribute( 'data-sb-tab' ) === key ? 'true' : 'false' ); } );
+		panels.forEach( function ( p ) { p.hidden = p.getAttribute( 'data-sb-panel' ) !== key; } );
+		if ( savebar ) { savebar.hidden = 'shortcodes' === key; }
+		if ( remember ) {
+			try { window.localStorage.setItem( 'sbSettingsTab', key ); } catch ( e ) { /* private mode: fine */ }
+			if ( window.history.replaceState ) { window.history.replaceState( null, '', '#' + key ); }
+		}
+	}
+
+	tabs.forEach( function ( t ) { t.addEventListener( 'click', function () { show( t.getAttribute( 'data-sb-tab' ), true ); } ); } );
+	show( window.location.hash.replace( '#', '' ) || remembered() || 'fares', false );
+
+	document.addEventListener( 'click', function ( e ) {
+		var btn = e.target.closest ? e.target.closest( '[data-sb-copy]' ) : null;
+		if ( ! btn ) { return; }
+		var text = btn.getAttribute( 'data-sb-copy' ), old = btn.textContent;
+		function done( ok ) {
+			btn.textContent = ok ? 'Copied' : 'Press Ctrl+C';
+			window.setTimeout( function () { btn.textContent = old; }, 1600 );
+		}
+		if ( navigator.clipboard && window.isSecureContext ) {
+			navigator.clipboard.writeText( text ).then( function () { done( true ); }, function () { done( false ); } );
+			return;
+		}
+		var ta = document.createElement( 'textarea' );
+		ta.value = text; ta.setAttribute( 'readonly', '' ); ta.style.position = 'fixed'; ta.style.opacity = '0';
+		document.body.appendChild( ta ); ta.select();
+		var ok = false;
+		try { ok = document.execCommand( 'copy' ); } catch ( err ) { ok = false; }
+		ta.remove();
+		done( ok );
+	} );
+}() );
