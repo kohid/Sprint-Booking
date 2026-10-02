@@ -446,6 +446,7 @@ final class Admin {
 
 	/** The two staff pages as a short route: Overview, then Bookings. Each stop shows whether its page exists. */
 	private static function dashboard_pages_card(): void {
+		Dashboard::forget_pages(); // Opening this screen always re-scans, so it shows what the menu will find.
 		$urls  = Dashboard::page_urls();
 		$stops = array(
 			'overview' => __( 'Overview', 'sprint-booking' ),

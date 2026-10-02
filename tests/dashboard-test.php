@@ -12,6 +12,7 @@ require __DIR__ . '/../includes/BookingQuery.php';
 require __DIR__ . '/../includes/Rest.php';
 require __DIR__ . '/../includes/Stats.php';
 require __DIR__ . '/../includes/Presenter.php';
+require __DIR__ . '/../includes/Dashboard.php';
 
 use SprintBooking\BookingQuery;
 use SprintBooking\Presenter;
@@ -124,6 +125,18 @@ t( 'broken stops do not break the row', array() === $bare['stops'] && 0 === $bar
 t( 'no return and no vulnerable flag give null', null === $bare['return'] && null === $bare['vulnerable'] );
 t( 'a far date shows the weekday and date', 'Fri 25 Dec' === $bare['pickup']['day'] );
 t( 'winter times are not shifted', '09:00' === $bare['pickup']['time'] );
+
+// ── Finding the page that holds each dashboard view (plain content and Elementor JSON) ──
+use SprintBooking\Dashboard;
+t( 'bare shortcode means overview', 'overview' === Dashboard::view_in( 'Hi [sprint_dashboard] there' ) );
+t( 'view="bookings"', 'bookings' === Dashboard::view_in( '[sprint_dashboard view="bookings"]' ) );
+t( "view='bookings' with single quotes", 'bookings' === Dashboard::view_in( "[sprint_dashboard view='bookings']" ) );
+t( 'Elementor JSON with escaped quotes', 'bookings' === Dashboard::view_in( '{"widgetType":"shortcode","settings":{"shortcode":"[sprint_dashboard view=\\"bookings\\"]"}}' ) );
+t( 'Elementor JSON, overview', 'overview' === Dashboard::view_in( '{"shortcode":"[sprint_dashboard view=\\"overview\\"]"}' ) );
+t( 'spaces around the equals sign', 'bookings' === Dashboard::view_in( '[sprint_dashboard  view = "bookings" fullscreen="no"]' ) );
+t( 'the overview-only shortcode counts as overview', 'overview' === Dashboard::view_in( '[sprint_dashboard_overview]' ) );
+t( 'the bookings-only shortcode counts as bookings', 'bookings' === Dashboard::view_in( '[sprint_dashboard_bookings status="new"]' ) );
+t( 'other shortcodes and text give none', '' === Dashboard::view_in( '[sprint_booking_form] [sprint_dashboardx]' ) );
 
 echo $fail ? "\n$fail failed\n" : "\nAll passed\n";
 exit( $fail ? 1 : 0 );

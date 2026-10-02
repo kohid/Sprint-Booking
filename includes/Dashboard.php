@@ -38,6 +38,11 @@ final class Dashboard {
 		add_shortcode( self::BOOKINGS_TAG, array( self::class, 'bookings' ) );
 		add_action( 'save_post_page', array( self::class, 'forget_pages' ) );
 		add_action( 'deleted_post', array( self::class, 'forget_pages' ) );
+		add_action( 'trashed_post', array( self::class, 'forget_pages' ) );
+		add_action( 'transition_post_status', array( self::class, 'forget_pages' ) );
+		// Elementor writes its page data after save_post has fired.
+		add_action( 'updated_post_meta', array( self::class, 'forget_on_elementor' ), 10, 3 );
+		add_action( 'added_post_meta', array( self::class, 'forget_on_elementor' ), 10, 3 );
 	}
 
 	// ── Shortcodes ────────────────────────────────────────────────
@@ -114,35 +119,64 @@ final class Dashboard {
 	 */
 	public static function page_urls(): array {
 		$cached = get_transient( self::PAGES_TRANSIENT );
-		if ( is_array( $cached ) ) {
-			return $cached;
+		if ( is_array( $cached ) && ! empty( $cached['overview'] ) && ! empty( $cached['bookings'] ) ) {
+			return $cached; // Only a complete answer is kept; a partial one is looked up again next time.
 		}
-		$out  = array();
-		$base = array(
-			'post_type'      => 'page',
-			'post_status'    => 'publish',
-			'posts_per_page' => 20,
-			'no_found_rows'  => true,
-			'fields'         => 'ids',
+
+		global $wpdb;
+		$like = '%' . $wpdb->esc_like( '[' . self::SHELL_TAG ) . '%';
+		// Plain SQL on purpose: site search plugins hook WP_Query's "s" and can change what it finds.
+		$ids = $wpdb->get_col( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare(
+				"SELECT p.ID FROM {$wpdb->posts} p
+				 LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_elementor_data'
+				 WHERE p.post_type = 'page' AND p.post_status = 'publish'
+				   AND ( p.post_content LIKE %s OR m.meta_value LIKE %s )
+				 ORDER BY p.ID ASC LIMIT 50",
+				$like,
+				$like
+			)
 		);
-		$ids  = array_merge(
-			(array) ( new \WP_Query( $base + array( 's' => '[' . self::SHELL_TAG ) ) )->posts,
-			(array) ( new \WP_Query( $base + array( 'meta_query' => array( array( 'key' => '_elementor_data', 'value' => '[' . self::SHELL_TAG, 'compare' => 'LIKE' ) ) ) ) )->posts // phpcs:ignore WordPress.DB.SlowDBQuery
-		);
-		foreach ( array_unique( array_map( 'intval', $ids ) ) as $id ) {
+
+		$out = array();
+		foreach ( (array) $ids as $id ) {
+			$id   = (int) $id;
 			$post = get_post( $id );
 			$text = $post ? (string) $post->post_content . ' ' . (string) get_post_meta( $id, '_elementor_data', true ) : '';
-			// Elementor stores the shortcode inside JSON, so quotes may be escaped.
-			if ( ! preg_match( '/\[' . self::SHELL_TAG . '(?![_a-z])([^\]]*)\]/', $text, $m ) ) {
-				continue;
-			}
-			$view = preg_match( '/view\s*=\s*\\?[\"\']?bookings/', $m[1] ) ? 'bookings' : 'overview';
-			if ( empty( $out[ $view ] ) ) {
+			$view = self::view_in( $text );
+			if ( $view && empty( $out[ $view ] ) ) {
 				$out[ $view ] = (string) get_permalink( $id );
 			}
 		}
-		set_transient( self::PAGES_TRANSIENT, $out, 12 * HOUR_IN_SECONDS );
+		set_transient( self::PAGES_TRANSIENT, $out, 5 * MINUTE_IN_SECONDS );
 		return $out;
+	}
+
+	/**
+	 * Which view a page shows, judging by its shortcode: 'overview', 'bookings' or '' for none.
+	 * Elementor keeps shortcodes inside JSON, so quotes may arrive escaped (view=\"bookings\").
+	 */
+	public static function view_in( string $text ): string {
+		if ( ! preg_match_all( '/\[' . self::SHELL_TAG . '(_overview|_bookings)?(?![_a-z])([^\]]*)\]/', $text, $all, PREG_SET_ORDER ) ) {
+			return '';
+		}
+		foreach ( $all as $m ) {
+			if ( '_bookings' === $m[1] ) {
+				return 'bookings';
+			}
+			if ( '_overview' === $m[1] ) {
+				return 'overview';
+			}
+			return preg_match( '/view\s*=\s*\\\\*["\']?bookings/', $m[2] ) ? 'bookings' : 'overview';
+		}
+		return '';
+	}
+
+	/** @param mixed $meta_id Unused. */
+	public static function forget_on_elementor( $meta_id, $post_id, $meta_key ): void {
+		if ( '_elementor_data' === $meta_key ) {
+			self::forget_pages();
+		}
 	}
 
 	public static function forget_pages(): void {
