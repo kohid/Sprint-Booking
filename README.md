@@ -43,7 +43,7 @@ row to refresh the check straight away (it is otherwise cached for six hours).
 To publish a new version:
 
 1. Change `Version:` in `sprint-booking.php` **and** `SB_VERSION` to the new number, and commit.
-2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+2. Tag and push (`git tag v0.2.0 && git push origin v0.2.0`), or run the workflow by hand: Actions → Release → Run workflow, tag `v0.2.0`.
 3. The **Release** workflow checks the tag matches the plugin version, runs the tests, builds
    `sprint-booking.zip` and publishes the release. Sites then offer the update.
 

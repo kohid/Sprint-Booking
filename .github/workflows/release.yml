@@ -1,11 +1,19 @@
 name: Release
 
-# Push a tag like v0.2.0 to publish a release. The plugin's Updater reads the latest
-# release and shows "update available" on the WordPress Plugins screen.
+# Publishes a release that the plugin's Updater picks up on the WordPress Plugins screen.
+#  - Push a tag like v0.2.0, or
+#  - run this workflow by hand (Actions → Release → Run workflow) and enter the tag; GitHub
+#    creates the tag on the chosen branch for you.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v0.1.0 (must match the plugin Version)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,14 +21,20 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Tag must match the plugin version
+      - name: Tag must be vX.Y.Z and match the plugin version
         run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag '$TAG' must look like v1.2.3" >&2
+            exit 1
+          fi
           version=$(sed -nE 's/^ \* Version:[[:space:]]*([0-9][^[:space:]]*).*/\1/p' sprint-booking.php | head -1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match plugin version $version" >&2
+          if [ "v$version" != "$TAG" ]; then
+            echo "Tag $TAG does not match plugin version $version" >&2
             exit 1
           fi
 
@@ -31,6 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/sprint-booking.zip \
-            --title "Sprint Booking ${GITHUB_REF_NAME#v}" \
+          gh release create "$TAG" dist/sprint-booking.zip \
+            --target "$GITHUB_SHA" \
+            --title "Sprint Booking ${TAG#v}" \
             --generate-notes
