@@ -60,6 +60,16 @@ final class Bookings {
 		);
 	}
 
+	/** A customer's own bookings, newest pickup first. */
+	public static function for_user( int $user_id, int $limit = 50 ): array {
+		global $wpdb;
+		$table = Activator::table();
+		return (array) $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE user_id = %d ORDER BY pickup_at DESC LIMIT %d", $user_id, $limit ), // phpcs:ignore WordPress.DB
+			ARRAY_A
+		);
+	}
+
 	public static function update_status( int $id, string $status ): bool {
 		global $wpdb;
 		if ( ! isset( self::STATUSES[ $status ] ) ) {

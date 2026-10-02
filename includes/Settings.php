@@ -34,12 +34,14 @@ final class Settings {
 			'min_lead_minutes'        => 60,
 			'notify_email'            => '',
 			'routing_base_url'        => 'https://router.project-osrm.org',
+			'geocoder_url'            => 'https://photon.komoot.io/api',
+			'allow_accounts'          => true,
 			'vehicles'                => array(
-				'saloon'    => array( 'label' => 'Saloon', 'capacity' => 4, 'bags' => 2, 'multiplier' => 1.00, 'minibus' => false ),
-				'estate'    => array( 'label' => 'Estate', 'capacity' => 4, 'bags' => 3, 'multiplier' => 1.10, 'minibus' => false ),
-				'mpv'       => array( 'label' => 'MPV', 'capacity' => 6, 'bags' => 4, 'multiplier' => 1.35, 'minibus' => false ),
-				'minibus8'  => array( 'label' => 'Minibus (8 seats)', 'capacity' => 8, 'bags' => 8, 'multiplier' => 1.60, 'minibus' => true ),
-				'minibus16' => array( 'label' => 'Minibus (16 seats)', 'capacity' => 16, 'bags' => 16, 'multiplier' => 2.20, 'minibus' => true ),
+				'saloon'    => array( 'label' => 'Saloon', 'capacity' => 4, 'bags' => 2, 'type' => 'saloon', 'image_id' => 0, 'multiplier' => 1.00, 'minibus' => false ),
+				'estate'    => array( 'label' => 'Estate', 'capacity' => 4, 'bags' => 3, 'type' => 'estate', 'image_id' => 0, 'multiplier' => 1.10, 'minibus' => false ),
+				'mpv'       => array( 'label' => 'MPV', 'capacity' => 6, 'bags' => 4, 'type' => 'mpv', 'image_id' => 0, 'multiplier' => 1.35, 'minibus' => false ),
+				'minibus8'  => array( 'label' => 'Minibus (8 seats)', 'capacity' => 8, 'bags' => 8, 'type' => 'minibus', 'image_id' => 0, 'multiplier' => 1.60, 'minibus' => true ),
+				'minibus16' => array( 'label' => 'Minibus (16 seats)', 'capacity' => 16, 'bags' => 16, 'type' => 'minibus', 'image_id' => 0, 'multiplier' => 2.20, 'minibus' => true ),
 			),
 			'services'                => array(
 				'airport'   => array( 'label' => 'Airport Transfer', 'quote_only' => false, 'minibus_only' => false ),
@@ -88,9 +90,17 @@ final class Settings {
 		$base                    = esc_url_raw( (string) ( $in['routing_base_url'] ?? $d['routing_base_url'] ), array( 'https' ) );
 		$out['routing_base_url'] = $base ? untrailingslashit( $base ) : $d['routing_base_url'];
 
+		$geo                  = esc_url_raw( (string) ( $in['geocoder_url'] ?? $d['geocoder_url'] ), array( 'https' ) );
+		$out['geocoder_url']  = $geo ? untrailingslashit( $geo ) : $d['geocoder_url'];
+		$out['allow_accounts'] = ! empty( $in['allow_accounts'] );
+
 		foreach ( $d['vehicles'] as $key => $veh ) {
-			$m                                   = (float) ( $in['vehicles'][ $key ]['multiplier'] ?? $veh['multiplier'] );
+			$m                                     = (float) ( $in['vehicles'][ $key ]['multiplier'] ?? $veh['multiplier'] );
 			$out['vehicles'][ $key ]['multiplier'] = max( 0.5, min( 10, round( $m, 2 ) ) );
+
+			// A car photo from the media library; ignore anything that is not an image attachment.
+			$img = absint( $in['vehicles'][ $key ]['image_id'] ?? 0 );
+			$out['vehicles'][ $key ]['image_id'] = ( $img && function_exists( 'wp_attachment_is_image' ) && wp_attachment_is_image( $img ) ) ? $img : 0;
 		}
 		foreach ( $d['services'] as $key => $svc ) {
 			$out['services'][ $key ]['quote_only'] = ! empty( $in['services'][ $key ]['quote_only'] );

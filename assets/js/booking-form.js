@@ -1,9 +1,9 @@
 /**
  * Sprint Booking — front-end booking form.
  *
- * Journey Details → Choose Your Car → Passenger Details, with via stops, live
- * distance and fare from the server (/quote), a Leaflet map, and a final
- * /bookings request. The server recomputes route and price on submit, so nothing
+ * Journey Details → Choose Your Car → Passenger Details, with address suggestions while
+ * typing, via stops, live distance and fare from the server (/quote), a Leaflet map and a
+ * final /bookings request. The server recomputes route and price on submit, so nothing
  * shown here is trusted.
  *
  * All dynamic text goes through textContent; there is no innerHTML on user data.
@@ -23,6 +23,8 @@
 
 	var METRES_PER_MILE = 1609.344;
 	var MAX_STEP = 3;
+	var SUGGEST_DELAY = 280;
+	var AIRPORT_QUERY = 'Inverness Airport';
 
 	// ── State ───────────────────────────────────────────────────
 
@@ -37,13 +39,13 @@
 		quoteSeq: 0,
 		quoteTimer: null,
 		quoteAbort: null,
-		focusStop: null,
+		airportAuto: null, // { index, text } — the stop we filled in for an airport transfer.
 		startedAt: Date.now()
 	};
 
 	function newStop() {
 		stopSeq += 1;
-		return { id: stopSeq, text: '', label: '', lat: null, lng: null, resolved: false, busy: false, error: '', results: null };
+		return { id: stopSeq, text: '', label: '', lat: null, lng: null, resolved: false, items: [], active: -1, timer: null, abort: null, ui: null };
 	}
 
 	// ── Small helpers ───────────────────────────────────────────
@@ -56,6 +58,12 @@
 			else { n.setAttribute( k, attrs[ k ] ); }
 		} );
 		( kids || [] ).forEach( function ( c ) { if ( c ) { n.appendChild( c ); } } );
+		return n;
+	}
+
+	function svg( tag, attrs ) {
+		var n = document.createElementNS( 'http://www.w3.org/2000/svg', tag );
+		Object.keys( attrs || {} ).forEach( function ( k ) { n.setAttribute( k, attrs[ k ] ); } );
 		return n;
 	}
 
@@ -80,6 +88,11 @@
 	}
 
 	function api( path, options ) {
+		options = options || {};
+		if ( CFG.nonce ) {
+			options.headers = Object.assign( { 'X-WP-Nonce': CFG.nonce }, options.headers || {} );
+			options.credentials = 'same-origin';
+		}
 		return fetch( CFG.rest + path, options ).then( function ( res ) {
 			return res.json().catch( function () { return {}; } ).then( function ( body ) {
 				if ( ! res.ok ) {
@@ -104,6 +117,7 @@
 	// ── Service rules ───────────────────────────────────────────
 
 	function service() { return CFG.services[ state.service ] || {}; }
+	function isAirport() { return state.service === 'airport'; }
 
 	function vehicleAllowed( key ) {
 		var v = CFG.vehicles[ key ];
@@ -115,7 +129,12 @@
 		return !! v && v.capacity >= num( 'passengers', 1 ) && v.bags >= num( 'luggage', 0 );
 	}
 
-	// ── Route stops ─────────────────────────────────────────────
+	function applyServiceFields() {
+		$$( '[data-sb-only]' ).forEach( function ( n ) { n.hidden = n.getAttribute( 'data-sb-only' ) !== state.service; } );
+		$( '[data-sb-submit]' ).textContent = service().quoteOnly ? 'Send quote request' : 'Confirm booking';
+	}
+
+	// ── Route stops (pickup, vias, add-via button, drop-off) ────
 
 	function stopRole( i ) {
 		if ( i === 0 ) { return 'pickup'; }
@@ -129,107 +148,88 @@
 		return 'Via stop ' + i;
 	}
 
-	function renderStops() {
+	function renderStops( focusId ) {
 		var list = $( '[data-sb-stops]' );
 		list.textContent = '';
+		var last = state.stops.length - 1;
+		var vias = state.stops.length - 2;
+		var left = CFG.maxVias - vias;
 
 		state.stops.forEach( function ( stop, i ) {
-			var role = stopRole( i );
-			var inputId = 'sb-stop-input-' + stop.id;
-			var li = el( 'li', { 'class': 'sb-stop sb-stop--' + role + ( stop.resolved ? ' is-resolved' : '' ) } );
-
-			li.appendChild( el( 'span', { 'class': 'sb-node', 'aria-hidden': 'true', text: role === 'pickup' ? 'A' : ( role === 'dropoff' ? 'B' : String( i ) ) } ) );
-			li.appendChild( el( 'label', { 'for': inputId, text: stopTitle( i ) } ) );
-
-			var input = el( 'input', {
-				type: 'search',
-				id: inputId,
-				placeholder: 'Address or postcode',
-				autocomplete: 'off',
-				maxlength: '120',
-				'aria-describedby': inputId + '-meta'
-			} );
-			input.value = stop.text;
-			input.addEventListener( 'input', function () {
-				stop.text = input.value;
-				if ( stop.resolved ) {
-					stop.resolved = false;
-					stop.lat = stop.lng = null;
-					stop.label = '';
-					li.classList.remove( 'is-resolved' );
-					meta.textContent = '';
-					scheduleQuote();
-					updateMap();
-				}
-				stop.error = '';
-			} );
-			input.addEventListener( 'keydown', function ( e ) {
-				if ( e.key === 'Enter' ) {
-					e.preventDefault();
-					findStop( stop );
-				}
-			} );
-
-			var find = el( 'button', { type: 'button', 'class': 'sb-find', text: 'Find' } );
-			find.addEventListener( 'click', function () { findStop( stop ); } );
-
-			var row = el( 'div', { 'class': 'sb-search' }, [ input, find ] );
-			if ( role === 'via' ) {
-				var rm = el( 'button', { type: 'button', 'class': 'sb-remove', 'aria-label': 'Remove ' + stopTitle( i ), text: 'Remove' } );
-				rm.addEventListener( 'click', function () { removeStop( stop ); } );
-				row.appendChild( rm );
+			if ( i === last ) {
+				list.appendChild( buildAddRow( left ) );
 			}
-			li.appendChild( row );
+			list.appendChild( buildStop( stop, i ) );
 
-			var meta = el( 'p', { 'class': 'sb-stop-meta', id: inputId + '-meta' } );
-			if ( stop.busy ) {
-				meta.className += ' is-busy';
-				meta.textContent = 'Searching…';
-			} else if ( stop.error ) {
-				meta.className += ' is-error';
-				meta.textContent = stop.error;
-			} else if ( stop.resolved ) {
-				meta.textContent = stop.label === stop.text ? '✓ Address found' : '✓ ' + stop.label;
-			}
-			li.appendChild( meta );
-
-			if ( stop.results && stop.results.length ) {
-				var ul = el( 'ul', { 'class': 'sb-results', role: 'listbox', 'aria-label': 'Search results for ' + stopTitle( i ) } );
-				stop.results.forEach( function ( r ) {
-					var opt = el( 'li', { role: 'option', tabindex: '0', text: r.label } );
-					var pick = function () { chooseResult( stop, r ); };
-					opt.addEventListener( 'click', pick );
-					opt.addEventListener( 'keydown', function ( e ) {
-						if ( e.key === 'Enter' || e.key === ' ' ) { e.preventDefault(); pick(); }
-					} );
-					ul.appendChild( opt );
-				} );
-				li.appendChild( ul );
-			}
-
-			list.appendChild( li );
-
-			// Distance to the next stop, once the route is known.
-			if ( i < state.stops.length - 1 ) {
+			if ( i < last ) {
 				var legM = state.quote && state.quote.legs ? state.quote.legs[ i ] : null;
-				var leg = el( 'li', { 'class': 'sb-legrow', text: legM != null ? '↓ ' + miles( legM ) + ' miles' : '' } );
-				list.appendChild( leg );
+				list.appendChild( el( 'li', { 'class': 'sb-legrow', text: legM != null ? '↓ ' + miles( legM ) + ' miles' : '' } ) );
 			}
 		} );
 
-		var vias = state.stops.length - 2;
-		var addBtn = $( '[data-sb-add-via]' );
-		var left = CFG.maxVias - vias;
-		addBtn.disabled = left <= 0;
-		$( '[data-sb-add-via-label]' ).textContent = left > 0
-			? 'Add a via stop (' + left + ' left)'
-			: 'Via stop limit reached';
-
-		if ( state.focusStop ) {
-			var f = document.getElementById( 'sb-stop-input-' + state.focusStop );
+		if ( focusId ) {
+			var f = document.getElementById( 'sb-stop-input-' + focusId );
 			if ( f ) { f.focus(); }
-			state.focusStop = null;
 		}
+	}
+
+	function buildAddRow( left ) {
+		var btn = el( 'button', { type: 'button', 'class': 'sb-btn sb-btn--ghost sb-add-via' }, [
+			el( 'span', { 'aria-hidden': 'true', text: '+' } ),
+			el( 'span', { text: left > 0 ? 'Add a via stop (' + left + ' left)' : 'Via stop limit reached' } )
+		] );
+		btn.disabled = left <= 0;
+		btn.addEventListener( 'click', addVia );
+		return el( 'li', { 'class': 'sb-addrow' }, [ el( 'span', { 'class': 'sb-node sb-node--add', 'aria-hidden': 'true', text: '+' } ), btn ] );
+	}
+
+	function buildStop( stop, i ) {
+		var role = stopRole( i );
+		var inputId = 'sb-stop-input-' + stop.id;
+		var listId = 'sb-stop-list-' + stop.id;
+		var li = el( 'li', { 'class': 'sb-stop sb-stop--' + role + ( stop.resolved ? ' is-resolved' : '' ) } );
+
+		li.appendChild( el( 'span', { 'class': 'sb-node', 'aria-hidden': 'true', text: role === 'pickup' ? 'A' : ( role === 'dropoff' ? 'B' : String( i ) ) } ) );
+		li.appendChild( el( 'label', { 'for': inputId, text: stopTitle( i ) } ) );
+
+		var input = el( 'input', {
+			type: 'text',
+			id: inputId,
+			role: 'combobox',
+			placeholder: 'Address or postcode',
+			autocomplete: 'off',
+			autocapitalize: 'off',
+			spellcheck: 'false',
+			maxlength: '120',
+			'aria-autocomplete': 'list',
+			'aria-expanded': 'false',
+			'aria-controls': listId,
+			'aria-describedby': inputId + '-meta'
+		} );
+		input.value = stop.text;
+
+		var meta = el( 'p', { 'class': 'sb-stop-meta', id: inputId + '-meta', 'aria-live': 'polite' } );
+		var ul = el( 'ul', { 'class': 'sb-results', id: listId, role: 'listbox', 'aria-label': 'Suggestions for ' + stopTitle( i ) } );
+		ul.hidden = true;
+
+		var row = el( 'div', { 'class': 'sb-search' }, [ input ] );
+		if ( role === 'via' ) {
+			var rm = el( 'button', { type: 'button', 'class': 'sb-remove', 'aria-label': 'Remove ' + stopTitle( i ), text: 'Remove' } );
+			rm.addEventListener( 'click', function () { removeStop( stop ); } );
+			row.appendChild( rm );
+		}
+
+		stop.ui = { li: li, input: input, list: ul, meta: meta };
+
+		input.addEventListener( 'input', function () { onStopInput( stop ); } );
+		input.addEventListener( 'keydown', function ( e ) { onStopKey( stop, e ); } );
+		input.addEventListener( 'blur', function () { setTimeout( function () { closeSuggestions( stop ); }, 150 ); } );
+		input.addEventListener( 'focus', function () { if ( stop.items.length && ! stop.resolved ) { openSuggestions( stop ); } } );
+
+		li.appendChild( row );
+		li.appendChild( meta );
+		li.appendChild( ul );
+		return li;
 	}
 
 	function removeStop( stop ) {
@@ -243,77 +243,176 @@
 		if ( state.stops.length - 2 >= CFG.maxVias ) { return; }
 		var via = newStop();
 		state.stops.splice( state.stops.length - 1, 0, via );
-		state.focusStop = via.id;
-		renderStops();
+		renderStops( via.id );
 	}
 
-	function findStop( stop ) {
-		var q = stop.text.trim();
-		stop.results = null;
-		stop.error = '';
-		if ( q.length < 3 ) {
-			stop.error = 'Type at least 3 characters, then choose Find.';
-			state.focusStop = stop.id;
-			renderStops();
-			return Promise.resolve();
-		}
-		stop.busy = true;
-		state.focusStop = stop.id;
-		renderStops();
+	// Suggestions while typing ------------------------------------
 
-		return api( 'geocode?q=' + encodeURIComponent( q ) ).then( function ( body ) {
-			stop.busy = false;
-			var results = body.results || [];
-			if ( ! results.length ) {
-				stop.error = 'No match found. Try a postcode or add the town.';
-				renderStops();
-			} else if ( results.length === 1 ) {
-				chooseResult( stop, results[ 0 ] );
-			} else {
-				stop.results = results;
-				renderStops();
-			}
+	function onStopInput( stop ) {
+		stop.text = stop.ui.input.value;
+		if ( stop.resolved ) {
+			stop.resolved = false;
+			stop.lat = stop.lng = null;
+			stop.label = '';
+			stop.ui.li.classList.remove( 'is-resolved' );
+			scheduleQuote();
+			updateMap();
+		}
+		clearTimeout( stop.timer );
+		if ( stop.abort ) { stop.abort.abort(); }
+		setMeta( stop, '', '' );
+
+		var q = stop.text.trim();
+		if ( q.length < 3 ) {
+			stop.items = [];
+			closeSuggestions( stop );
+			return;
+		}
+		stop.timer = setTimeout( function () { fetchSuggestions( stop, q ); }, SUGGEST_DELAY );
+	}
+
+	function fetchSuggestions( stop, q ) {
+		stop.abort = window.AbortController ? new AbortController() : null;
+		setMeta( stop, 'Searching…', 'is-busy' );
+
+		return api( 'geocode?q=' + encodeURIComponent( q ), stop.abort ? { signal: stop.abort.signal } : {} ).then( function ( body ) {
+			if ( stop.text.trim() !== q ) { return null; } // The customer kept typing.
+			stop.items = body.results || [];
+			stop.active = -1;
+			setMeta( stop, stop.items.length ? '' : 'No match yet. Try a postcode or add the town.', stop.items.length ? '' : 'is-error' );
+			renderSuggestions( stop );
+			return stop.items;
 		} ).catch( function ( err ) {
-			stop.busy = false;
-			stop.error = err.message;
-			renderStops();
+			if ( err.name === 'AbortError' ) { return null; }
+			stop.items = [];
+			closeSuggestions( stop );
+			setMeta( stop, err.message, 'is-error' );
+			return null;
 		} );
 	}
 
+	function setMeta( stop, text, cls ) {
+		if ( ! stop.ui ) { return; }
+		stop.ui.meta.textContent = text;
+		stop.ui.meta.className = 'sb-stop-meta' + ( cls ? ' ' + cls : '' );
+	}
+
+	function renderSuggestions( stop ) {
+		var ul = stop.ui.list;
+		ul.textContent = '';
+		stop.items.forEach( function ( r, idx ) {
+			var opt = el( 'li', { role: 'option', id: ul.id + '-' + idx, 'aria-selected': 'false', text: r.label } );
+			// mousedown, not click: it fires before the input loses focus.
+			opt.addEventListener( 'mousedown', function ( e ) { e.preventDefault(); chooseResult( stop, r ); } );
+			ul.appendChild( opt );
+		} );
+		if ( stop.items.length ) { openSuggestions( stop ); } else { closeSuggestions( stop ); }
+	}
+
+	function openSuggestions( stop ) {
+		if ( ! stop.ui ) { return; }
+		stop.ui.list.hidden = false;
+		stop.ui.input.setAttribute( 'aria-expanded', 'true' );
+	}
+
+	function closeSuggestions( stop ) {
+		if ( ! stop.ui ) { return; }
+		stop.ui.list.hidden = true;
+		stop.ui.input.setAttribute( 'aria-expanded', 'false' );
+		stop.ui.input.removeAttribute( 'aria-activedescendant' );
+		stop.active = -1;
+	}
+
+	function setActive( stop, idx ) {
+		var opts = $$( '[role="option"]', stop.ui.list );
+		opts.forEach( function ( o, n ) {
+			var on = n === idx;
+			o.setAttribute( 'aria-selected', on ? 'true' : 'false' );
+			o.classList.toggle( 'is-active', on );
+			if ( on ) {
+				stop.ui.input.setAttribute( 'aria-activedescendant', o.id );
+				o.scrollIntoView( { block: 'nearest' } );
+			}
+		} );
+		stop.active = idx;
+	}
+
+	function onStopKey( stop, e ) {
+		var n = stop.items.length;
+		var open = ! stop.ui.list.hidden;
+
+		if ( e.key === 'ArrowDown' && n ) {
+			e.preventDefault();
+			if ( ! open ) { openSuggestions( stop ); }
+			setActive( stop, ( stop.active + 1 ) % n );
+		} else if ( e.key === 'ArrowUp' && n ) {
+			e.preventDefault();
+			if ( ! open ) { openSuggestions( stop ); }
+			setActive( stop, stop.active <= 0 ? n - 1 : stop.active - 1 );
+		} else if ( e.key === 'Enter' ) {
+			e.preventDefault();
+			if ( open && n ) { chooseResult( stop, stop.items[ stop.active >= 0 ? stop.active : 0 ] ); }
+		} else if ( e.key === 'Escape' && open ) {
+			e.preventDefault();
+			closeSuggestions( stop );
+		}
+	}
+
 	function chooseResult( stop, r ) {
-		stop.results = null;
-		stop.busy = false;
-		stop.error = '';
+		clearTimeout( stop.timer );
+		if ( stop.abort ) { stop.abort.abort(); }
 		stop.resolved = true;
 		stop.label = r.label;
 		stop.text = r.label;
 		stop.lat = r.lat;
 		stop.lng = r.lng;
-		state.focusStop = stop.id;
-		renderStops();
+		stop.items = [];
+		if ( stop.ui ) {
+			stop.ui.input.value = r.label;
+			stop.ui.li.classList.add( 'is-resolved' );
+			setMeta( stop, '', '' );
+		}
+		closeSuggestions( stop );
 		scheduleQuote();
 		updateMap();
-	}
-
-	function quickFill( query ) {
-		var target = null;
-		[ 0, state.stops.length - 1 ].some( function ( i ) {
-			if ( ! state.stops[ i ].resolved ) { target = state.stops[ i ]; return true; }
-			return false;
-		} );
-		if ( ! target ) {
-			showErrors( [ 'Pickup and drop-off are already set. Clear one to use quick fill.' ] );
-			return;
-		}
-		target.text = query;
-		findStop( target );
 	}
 
 	function allResolved() {
 		return state.stops.every( function ( s ) { return s.resolved; } );
 	}
 
-	// ── Date and time ───────────────────────────────────────────
+	// Airport transfer: Departure fills the drop-off, Arrival fills the pickup.
+	function applyAirportDirection() {
+		if ( ! isAirport() || ! val( 'airport_direction' ) ) { return; }
+		var dir = val( 'airport_direction' );
+		var target = dir === 'arrival' ? state.stops[ 0 ] : state.stops[ state.stops.length - 1 ];
+		var other = dir === 'arrival' ? state.stops[ state.stops.length - 1 ] : state.stops[ 0 ];
+
+		// Clear an airport we filled for the other direction, if the customer has not changed it.
+		if ( state.airportAuto && state.airportAuto.stop === other && other.text === state.airportAuto.text ) {
+			other.text = ''; other.resolved = false; other.lat = other.lng = null; other.label = '';
+			if ( other.ui ) { other.ui.input.value = ''; other.ui.li.classList.remove( 'is-resolved' ); }
+		}
+		state.airportAuto = null;
+
+		if ( target.resolved || target.text.trim() !== '' ) {
+			scheduleQuote(); updateMap();
+			return;
+		}
+		target.text = AIRPORT_QUERY;
+		if ( target.ui ) { target.ui.input.value = AIRPORT_QUERY; }
+		api( 'geocode?q=' + encodeURIComponent( AIRPORT_QUERY ) ).then( function ( body ) {
+			var first = ( body.results || [] )[ 0 ];
+			if ( first && ! target.resolved && target.text === AIRPORT_QUERY ) {
+				chooseResult( target, first );
+				state.airportAuto = { stop: target, text: first.label };
+			}
+		} ).catch( function () { /* The customer can still type the airport. */ } );
+	}
+
+	// ── Date and time (flatpickr, styled after Metronic 8) ──────
+
+	var pickers = {};
 
 	function splitMin() {
 		var parts = CFG.minPickup.split( 'T' );
@@ -331,11 +430,37 @@
 		return val( 'return_date' ) && val( 'return_time' ) ? val( 'return_date' ) + 'T' + val( 'return_time' ) : '';
 	}
 
-	function initDates() {
+	function initPickers() {
 		var min = splitMin();
-		[ 'pickup_date', 'return_date' ].forEach( function ( n ) { form.elements[ n ].min = min.date; } );
-		form.elements.pickup_date.value = min.date;
-		form.elements.pickup_time.value = min.time;
+		var base = { appendTo: root, disableMobile: false, locale: { firstDayOfWeek: 1 } };
+
+		function date( name, opts ) {
+			var f = flatpickr( form.elements[ name ], Object.assign( {}, base, { dateFormat: 'Y-m-d', altInput: true, altFormat: 'D j M Y', altInputClass: 'sb-date-alt', monthSelectorType: 'dropdown' }, opts ) );
+			labelAlt( f, name );
+			return f;
+		}
+		function time( name, opts ) {
+			var f = flatpickr( form.elements[ name ], Object.assign( {}, base, { enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true, minuteIncrement: 5, altInput: true, altFormat: 'H:i', altInputClass: 'sb-time-alt' }, opts ) );
+			labelAlt( f, name );
+			return f;
+		}
+		// The label points at the hidden value input; give the visible one the same name.
+		function labelAlt( f, name ) {
+			var lab = root.querySelector( 'label[for="' + form.elements[ name ].id + '"]' );
+			if ( f.altInput && lab ) {
+				f.altInput.setAttribute( 'aria-label', lab.textContent.trim() );
+				f.altInput.setAttribute( 'autocomplete', 'off' );
+			}
+		}
+
+		pickers.pickupDate = date( 'pickup_date', {
+			minDate: min.date,
+			defaultDate: min.date,
+			onChange: function ( sel, str ) { if ( pickers.returnDate ) { pickers.returnDate.set( 'minDate', str || min.date ); } }
+		} );
+		pickers.pickupTime = time( 'pickup_time', { defaultDate: min.time } );
+		pickers.returnDate = date( 'return_date', { minDate: min.date } );
+		pickers.returnTime = time( 'return_time', {} );
 	}
 
 	// ── Quote ───────────────────────────────────────────────────
@@ -343,6 +468,7 @@
 	function quoteBody() {
 		return {
 			service: state.service,
+			airport_direction: isAirport() ? val( 'airport_direction' ) : '',
 			vehicle: state.vehicle,
 			passengers: num( 'passengers', 1 ),
 			luggage: num( 'luggage', 0 ),
@@ -369,6 +495,13 @@
 			renderSummary();
 			return Promise.resolve( null );
 		}
+		if ( isAirport() && ! val( 'airport_direction' ) ) {
+			state.quote = null;
+			state.quoteError = 'Choose Departure or Arrival to see the fare.';
+			renderSummary();
+			return Promise.resolve( null );
+		}
+		state.quoteError = '';
 		if ( state.quoteAbort ) { state.quoteAbort.abort(); }
 		state.quoteAbort = window.AbortController ? new AbortController() : null;
 		var seq = ++state.quoteSeq;
@@ -379,7 +512,7 @@
 			state.quote = q;
 			state.quoteError = '';
 			$( '[data-sb-summary]' ).removeAttribute( 'aria-busy' );
-			renderStops();
+			updateLegs();
 			renderSummary();
 			renderVehicles();
 			updateMap();
@@ -391,6 +524,14 @@
 			$( '[data-sb-summary]' ).removeAttribute( 'aria-busy' );
 			renderSummary();
 			return null;
+		} );
+	}
+
+	// Fill in the leg distances without rebuilding the inputs (which would lose focus).
+	function updateLegs() {
+		$$( '.sb-legrow' ).forEach( function ( row, i ) {
+			var m = state.quote && state.quote.legs ? state.quote.legs[ i ] : null;
+			row.textContent = m != null ? '↓ ' + miles( m ) + ' miles' : '';
 		} );
 	}
 
@@ -447,6 +588,46 @@
 
 	// ── Vehicles ────────────────────────────────────────────────
 
+	// Simple side-on illustrations, used until a photo is chosen under Taxi Bookings → Settings.
+	var CAR_SHAPES = {
+		saloon: {
+			body: 'M10 44 L10 38 Q10 33 16 32 L38 28 Q47 15 62 14 L98 14 Q113 15 122 28 L146 32 Q152 33 152 39 L152 44 Z',
+			windows: [ 'M49 28 Q55 19 64 18 L79 18 L79 28 Z', 'M85 18 L98 18 Q106 19 113 28 L85 28 Z' ]
+		},
+		estate: {
+			body: 'M10 44 L10 38 Q10 33 16 32 L38 28 Q47 15 62 14 L118 14 Q130 14 134 20 L148 25 Q154 27 154 33 L154 44 Z',
+			windows: [ 'M49 28 Q55 19 64 18 L77 18 L77 28 Z', 'M83 18 L110 18 L110 28 L83 28 Z', 'M116 18 L124 18 Q128 19 130 28 L116 28 Z' ]
+		},
+		mpv: {
+			body: 'M10 46 L10 38 Q10 33 17 32 L33 29 Q39 11 57 9 L118 9 Q134 9 138 24 L148 28 Q155 30 155 37 L155 46 Z',
+			windows: [ 'M45 29 Q50 17 60 14 L74 14 L74 29 Z', 'M80 14 L102 14 L102 29 L80 29 Z', 'M108 14 L118 14 Q127 15 130 29 L108 29 Z' ]
+		},
+		minibus: {
+			body: 'M8 47 L8 22 Q8 11 20 11 L136 11 Q149 11 152 25 L156 40 Q157 47 150 47 Z',
+			windows: [ 'M16 17 L40 17 L40 31 L16 31 Z', 'M46 17 L70 17 L70 31 L46 31 Z', 'M76 17 L100 17 L100 31 L76 31 Z', 'M106 17 L130 17 L130 31 L106 31 Z', 'M136 17 L142 17 Q146 18 147 31 L136 31 Z' ]
+		}
+	};
+
+	function carPicture( v ) {
+		var wrap = el( 'span', { 'class': 'sb-vehicle-pic' } );
+		if ( v.image ) {
+			var img = el( 'img', { src: v.image, alt: '', loading: 'lazy', decoding: 'async' } );
+			wrap.appendChild( img );
+			return wrap;
+		}
+		var shape = CAR_SHAPES[ v.type ] || CAR_SHAPES.saloon;
+		var s = svg( 'svg', { viewBox: '0 0 164 62', 'aria-hidden': 'true', focusable: 'false', 'class': 'sb-car' } );
+		s.appendChild( svg( 'ellipse', { cx: '82', cy: '57', rx: '66', ry: '3', 'class': 'sb-car-shadow' } ) );
+		s.appendChild( svg( 'path', { d: shape.body, 'class': 'sb-car-body' } ) );
+		shape.windows.forEach( function ( w ) { s.appendChild( svg( 'path', { d: w, 'class': 'sb-car-window' } ) ); } );
+		[ 36, 124 ].forEach( function ( cx ) {
+			s.appendChild( svg( 'circle', { cx: String( cx ), cy: '46', r: '9', 'class': 'sb-car-wheel' } ) );
+			s.appendChild( svg( 'circle', { cx: String( cx ), cy: '46', r: '3.5', 'class': 'sb-car-hub' } ) );
+		} );
+		wrap.appendChild( s );
+		return wrap;
+	}
+
 	function renderVehicles() {
 		var wrap = $( '[data-sb-vehicles]' );
 		wrap.textContent = '';
@@ -471,9 +652,9 @@
 			var priceText = service().quoteOnly ? 'Quote' : ( price != null ? money( price ) : '—' );
 
 			var card = el( 'span', { 'class': 'sb-vehicle-card' }, [
+				carPicture( v ),
 				el( 'span', { 'class': 'sb-vehicle-name', text: v.label } ),
-				el( 'span', { 'class': 'sb-vehicle-seats', text: 'Up to ' + plural( v.capacity, 'passenger', 'passengers' ) } ),
-				el( 'span', { 'class': 'sb-vehicle-seats', text: plural( v.bags, 'suitcase', 'suitcases' ) } ),
+				el( 'span', { 'class': 'sb-vehicle-seats', text: 'Up to ' + plural( v.capacity, 'passenger', 'passengers' ) + ' · ' + plural( v.bags, 'suitcase', 'suitcases' ) } ),
 				el( 'span', { 'class': 'sb-vehicle-price', text: fits ? priceText : 'Too small' } )
 			] );
 			wrap.appendChild( el( 'label', { 'class': 'sb-vehicle' + ( fits ? '' : ' is-disabled' ) }, [ input, card ] ) );
@@ -553,6 +734,29 @@
 		}
 	}
 
+	// ── Account choice (step 3) ─────────────────────────────────
+
+	function accountMode() {
+		if ( CFG.user ) { return 'account'; }
+		var r = form.querySelector( 'input[name="account_mode"]:checked' );
+		return r ? r.value : 'guest';
+	}
+
+	function applyAccountMode() {
+		var mode = accountMode();
+		var usesSaved = mode === 'login' || mode === 'account';
+
+		$( '[data-sb-password]' ).hidden = ! ( mode === 'register' || mode === 'login' );
+		$( '[data-sb-email]' ).hidden = mode === 'account';
+		$$( '[data-sb-saved-hint]' ).forEach( function ( h ) { h.hidden = ! usesSaved || ( mode === 'account' && ! CFG.user ); } );
+
+		var label = $( '[data-sb-email-label]' );
+		label.textContent = mode === 'login' ? 'Account email' : 'Email';
+		$( '[data-sb-password-label]' ).textContent = mode === 'register' ? 'Choose a password' : 'Password';
+		$( '[data-sb-password-hint]' ).textContent = mode === 'register' ? 'At least 8 characters. You will be signed in, and can see your bookings any time.' : '';
+		form.elements.password.setAttribute( 'autocomplete', mode === 'register' ? 'new-password' : 'current-password' );
+	}
+
 	// ── Steps ───────────────────────────────────────────────────
 
 	function goStep( n ) {
@@ -570,10 +774,10 @@
 		$( '[data-sb-next]' ).hidden = n === MAX_STEP;
 		$( '[data-sb-submit]' ).hidden = n !== MAX_STEP;
 		$( '[data-sb-next]' ).textContent = n === 1 ? 'Calculate fare' : 'Continue';
-		$( '[data-sb-submit]' ).textContent = service().quoteOnly ? 'Send quote request' : 'Confirm booking';
+		applyServiceFields();
 
 		hideErrors();
-		if ( n === 3 ) { renderReview(); }
+		if ( n === 3 ) { renderReview(); applyAccountMode(); }
 		if ( n === 2 ) { renderVehicles(); }
 
 		var h = $( '[data-panel="' + n + '"] .sb-h' );
@@ -602,8 +806,15 @@
 
 	function mark( name ) {
 		var f = form.elements[ name ];
-		if ( f ) { f.classList.add( 'is-invalid' ); }
+		if ( f ) { ( f.altInput || f ).classList.add( 'is-invalid' ); }
+		if ( pickers.pickupDate && name === 'pickup_date' ) { pickers.pickupDate.altInput.classList.add( 'is-invalid' ); }
+		if ( pickers.pickupTime && name === 'pickup_time' ) { pickers.pickupTime.altInput.classList.add( 'is-invalid' ); }
+		if ( pickers.returnDate && name === 'return_date' ) { pickers.returnDate.altInput.classList.add( 'is-invalid' ); }
+		if ( pickers.returnTime && name === 'return_time' ) { pickers.returnTime.altInput.classList.add( 'is-invalid' ); }
 	}
+
+	var PHONE_RE = /^[0-9 +()\-]{7,25}$/;
+	var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 	function validateStep( n ) {
 		var errors = [];
@@ -611,8 +822,12 @@
 
 		if ( n === 1 ) {
 			state.stops.forEach( function ( s, i ) {
-				if ( ! s.resolved ) { errors.push( stopTitle( i ) + ': search and choose an address.' ); }
+				if ( ! s.resolved ) { errors.push( stopTitle( i ) + ': pick an address from the suggestions.' ); }
 			} );
+			if ( isAirport() && ! val( 'airport_direction' ) ) {
+				errors.push( 'Choose whether this airport transfer is a departure or an arrival.' );
+				mark( 'airport_direction' );
+			}
 			var p = pickupValue();
 			if ( ! p ) {
 				errors.push( 'Choose a pickup date and time.' );
@@ -631,6 +846,10 @@
 					mark( 'return_date' ); mark( 'return_time' );
 				}
 			}
+			if ( form.elements.vulnerable.checked && ! val( 'vulnerable_type' ) ) {
+				errors.push( 'Choose the type of vulnerable solo traveller, or untick the box.' );
+				mark( 'vulnerable_type' );
+			}
 		}
 
 		if ( n === 2 ) {
@@ -638,9 +857,20 @@
 		}
 
 		if ( n === 3 ) {
-			if ( val( 'name' ).trim().length < 2 ) { errors.push( 'Enter your full name.' ); mark( 'name' ); }
-			if ( ! /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test( val( 'email' ).trim() ) ) { errors.push( 'Enter a valid email address.' ); mark( 'email' ); }
-			if ( ! /^[0-9 +()\-]{7,25}$/.test( val( 'phone' ).trim() ) ) { errors.push( 'Enter a phone number we can reach you on.' ); mark( 'phone' ); }
+			var mode = accountMode();
+			var name = val( 'name' ).trim();
+			var phone = val( 'phone' ).trim();
+			var email = val( 'email' ).trim();
+			var savedOk = mode === 'login' || mode === 'account';
+
+			if ( ! savedOk && name.length < 2 ) { errors.push( 'Enter your full name.' ); mark( 'name' ); }
+			if ( savedOk && name && name.length < 2 ) { errors.push( 'Enter your full name, or leave it blank to use the saved one.' ); mark( 'name' ); }
+			if ( mode !== 'account' && ! EMAIL_RE.test( email ) ) { errors.push( 'Enter a valid email address.' ); mark( 'email' ); }
+			if ( ! savedOk && ! PHONE_RE.test( phone ) ) { errors.push( 'Enter a phone number we can reach you on.' ); mark( 'phone' ); }
+			if ( savedOk && phone && ! PHONE_RE.test( phone ) ) { errors.push( 'Enter a valid phone number, or leave it blank to use the saved one.' ); mark( 'phone' ); }
+			if ( mode === 'account' && ! phone && ! ( CFG.user && CFG.user.phone ) ) { errors.push( 'Enter a mobile number so the driver can reach you.' ); mark( 'phone' ); }
+			if ( mode === 'register' && val( 'password' ).length < 8 ) { errors.push( 'Choose a password of at least 8 characters.' ); mark( 'password' ); }
+			if ( mode === 'login' && ! val( 'password' ) ) { errors.push( 'Enter your password.' ); mark( 'password' ); }
 			if ( ! form.elements.terms.checked ) { errors.push( 'Tick the box to agree to us using your details.' ); }
 		}
 
@@ -685,7 +915,7 @@
 		var dl = el( 'dl', { 'class': 'sb-review' } );
 		function row( k, t ) { if ( t ) { dl.appendChild( el( 'div', {}, [ el( 'dt', { text: k } ), el( 'dd', { text: t } ) ] ) ); } }
 
-		row( 'Service', service().label );
+		row( 'Service', service().label + ( isAirport() ? ' — ' + ( val( 'airport_direction' ) === 'arrival' ? 'Arrival' : 'Departure' ) : '' ) );
 		row( 'Pickup time', fmtDateTime( pickupValue() ) );
 		if ( form.elements.is_return.checked ) { row( 'Return time', fmtDateTime( returnValue() ) ); }
 		state.stops.forEach( function ( s, i ) {
@@ -702,7 +932,6 @@
 		}
 		box.appendChild( dl );
 
-		$$( '[data-sb-only]' ).forEach( function ( n ) { n.hidden = n.getAttribute( 'data-sb-only' ) !== state.service; } );
 		$( '[data-sb-pay-note]' ).textContent = service().quoteOnly
 			? 'We will email you a price. You do not pay anything now.'
 			: 'You pay the driver at the end of the journey.';
@@ -719,17 +948,23 @@
 		btn.disabled = true;
 		btn.textContent = 'Sending…';
 
+		var mode = accountMode();
 		var body = quoteBody();
 		body.pickup_at = pickupValue();
 		body.return_at = form.elements.is_return.checked ? returnValue() : '';
-		[ 'carry_on', 'title', 'name', 'email', 'phone', 'pickup_detail', 'dropoff_detail', 'flight_no', 'company', 'notes', 'website' ].forEach( function ( n ) {
+		body.vulnerable = form.elements.vulnerable.checked;
+		body.vulnerable_type = body.vulnerable ? val( 'vulnerable_type' ) : '';
+		body.account_mode = mode;
+		[ 'title', 'name', 'email', 'phone', 'flight_no', 'company', 'notes', 'website' ].forEach( function ( n ) {
 			if ( form.elements[ n ] ) { body[ n ] = form.elements[ n ].value; }
 		} );
+		if ( mode === 'register' || mode === 'login' ) { body.password = val( 'password' ); }
 		body.carry_on = num( 'carry_on', 0 );
 		body.terms = form.elements.terms.checked;
 		body.elapsed_ms = Date.now() - state.startedAt;
 
 		post( 'bookings', body ).then( function ( res ) {
+			form.elements.password.value = '';
 			showDone( res );
 		} ).catch( function ( err ) {
 			btn.disabled = false;
@@ -750,6 +985,11 @@
 		if ( ! res.quote_only && res.total_pence != null ) {
 			done.appendChild( el( 'p', { text: 'Fare: ' + money( res.total_pence ) } ) );
 		}
+		if ( res.registered ) {
+			done.appendChild( el( 'p', { text: 'Your account is ready and you are signed in, so you can see this booking any time.' } ) );
+		} else if ( res.signed_in ) {
+			done.appendChild( el( 'p', { text: 'You are signed in.' } ) );
+		}
 		form.hidden = true;
 		$( '.sb-aside' ).hidden = true;
 		done.hidden = false;
@@ -763,33 +1003,34 @@
 		form.addEventListener( 'submit', submit );
 		$( '[data-sb-next]' ).addEventListener( 'click', next );
 		$( '[data-sb-back]' ).addEventListener( 'click', function () { goStep( Math.max( 1, state.step - 1 ) ); } );
-		$( '[data-sb-add-via]' ).addEventListener( 'click', addVia );
 
 		$$( '[data-edit-step]' ).forEach( function ( b ) {
 			b.addEventListener( 'click', function () { goStep( Number( b.getAttribute( 'data-edit-step' ) ) ); } );
 		} );
-		$$( '[data-quick]' ).forEach( function ( b ) {
-			b.addEventListener( 'click', function () { quickFill( b.getAttribute( 'data-quick' ) ); } );
-		} );
 
-		$$( 'input[name="service"]' ).forEach( function ( r ) {
-			r.addEventListener( 'change', function () {
-				state.service = r.value;
-				if ( ! vehicleAllowed( state.vehicle ) ) { state.vehicle = ''; }
-				renderVehicles();
-				scheduleQuote();
-				$( '[data-sb-submit]' ).textContent = service().quoteOnly ? 'Send quote request' : 'Confirm booking';
-			} );
+		form.elements.service.addEventListener( 'change', function () {
+			state.service = this.value;
+			if ( ! vehicleAllowed( state.vehicle ) ) { state.vehicle = ''; }
+			applyServiceFields();
+			if ( isAirport() ) { applyAirportDirection(); }
+			renderVehicles();
+			scheduleQuote();
 		} );
+		form.elements.airport_direction.addEventListener( 'change', function () { applyAirportDirection(); scheduleQuote(); } );
 
 		form.elements.is_return.addEventListener( 'change', function () {
 			$( '[data-sb-return-field]' ).hidden = ! this.checked;
-			if ( this.checked && ! val( 'return_date' ) ) { form.elements.return_date.value = val( 'pickup_date' ); }
+			if ( this.checked && ! val( 'return_date' ) && pickers.returnDate ) { pickers.returnDate.setDate( val( 'pickup_date' ), true ); }
 			scheduleQuote();
 		} );
-		form.elements.pickup_date.addEventListener( 'change', function () {
-			form.elements.return_date.min = this.value || splitMin().date;
+
+		form.elements.vulnerable.addEventListener( 'change', function () {
+			$( '[data-sb-vulnerable-field]' ).hidden = ! this.checked;
+			if ( ! this.checked ) { form.elements.vulnerable_type.value = ''; }
 		} );
+
+		$$( 'input[name="account_mode"]' ).forEach( function ( r ) { r.addEventListener( 'change', applyAccountMode ); } );
+		if ( ! CFG.accounts ) { $$( '[data-sb-account-only]' ).forEach( function ( n ) { n.hidden = true; } ); }
 
 		// Counters.
 		$$( '[data-counter]' ).forEach( function ( c ) {
@@ -811,24 +1052,26 @@
 			onCountChange( input );
 		}
 		function onCountChange( input ) {
-			if ( input.name === 'luggage' ) { scheduleQuote(); }
 			renderVehicles();
 			if ( input.name === 'passengers' || input.name === 'luggage' ) { scheduleQuote(); }
 		}
 	}
 
 	function init() {
-		initDates();
+		if ( CFG.user ) {
+			form.elements.name.value = CFG.user.name || '';
+			form.elements.phone.value = CFG.user.phone || '';
+			form.elements.email.value = CFG.user.email || '';
+		}
+		initPickers();
 		renderStops();
 		renderSummary();
 		renderVehicles();
 		initMap();
 		bind();
-		goStepSilent();
-	}
+		applyServiceFields();
 
-	// First paint: show step 1 without stealing focus or scrolling.
-	function goStepSilent() {
+		// First paint: show step 1 without stealing focus or scrolling.
 		$$( '[data-panel]' ).forEach( function ( p ) { p.hidden = Number( p.getAttribute( 'data-panel' ) ) !== 1; } );
 		$( '[data-sb-back]' ).hidden = true;
 		$( '[data-sb-submit]' ).hidden = true;

@@ -30,7 +30,7 @@ final class Mailer {
 		$lines   = array();
 		$lines[] = ( $quote ? 'Quote request ' : 'Booking ' ) . $b['reference'];
 		$lines[] = '';
-		$lines[] = 'Service:   ' . ( $cfg['services'][ $b['service'] ]['label'] ?? $b['service'] );
+		$lines[] = 'Service:   ' . ( $cfg['services'][ $b['service'] ]['label'] ?? $b['service'] ) . ( $b['airport_direction'] ? ' (' . $b['airport_direction'] . ')' : '' );
 		$lines[] = 'Pickup at: ' . $when;
 		if ( ! empty( $b['return_at'] ) ) {
 			$ret     = ( new \DateTimeImmutable( $b['return_at'], new \DateTimeZone( 'UTC' ) ) )->setTimezone( $tz )->format( 'D j M Y, H:i' );
@@ -45,11 +45,8 @@ final class Mailer {
 		$lines[] = 'Name:  ' . trim( $b['customer_title'] . ' ' . $b['customer_name'] );
 		$lines[] = 'Phone: ' . $b['customer_phone'];
 		$lines[] = 'Email: ' . $b['customer_email'];
-		if ( $b['pickup_detail'] ) {
-			$lines[] = 'Pickup address:   ' . $b['pickup_detail'];
-		}
-		if ( $b['dropoff_detail'] ) {
-			$lines[] = 'Drop-off address: ' . $b['dropoff_detail'];
+		if ( $b['vulnerable_type'] ) {
+			$lines[] = 'Vulnerable solo traveller: ' . ( Rest::VULNERABLE_TYPES[ $b['vulnerable_type'] ] ?? $b['vulnerable_type'] );
 		}
 		if ( $b['flight_no'] ) {
 			$lines[] = 'Flight: ' . $b['flight_no'];

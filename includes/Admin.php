@@ -20,12 +20,23 @@ final class Admin {
 		add_action( 'admin_menu', array( self::class, 'menu' ) );
 		add_action( 'admin_init', array( self::class, 'register_settings' ) );
 		add_action( 'admin_post_sb_update_status', array( self::class, 'handle_status' ) );
+		add_action( 'admin_enqueue_scripts', array( self::class, 'enqueue' ) );
 	}
 
 	public static function menu(): void {
 		add_menu_page( __( 'Taxi Bookings', 'sprint-booking' ), __( 'Taxi Bookings', 'sprint-booking' ), self::CAP, 'sb-bookings', array( self::class, 'page_bookings' ), 'dashicons-car', 30 );
 		add_submenu_page( 'sb-bookings', __( 'Bookings', 'sprint-booking' ), __( 'Bookings', 'sprint-booking' ), self::CAP, 'sb-bookings', array( self::class, 'page_bookings' ) );
 		add_submenu_page( 'sb-bookings', __( 'Settings', 'sprint-booking' ), __( 'Settings', 'sprint-booking' ), self::CAP, 'sb-settings', array( self::class, 'page_settings' ) );
+	}
+
+	/** Media picker for the car photos, on the Settings screen only. */
+	public static function enqueue( string $hook ): void {
+		if ( false === strpos( $hook, 'sb-settings' ) ) {
+			return;
+		}
+		wp_enqueue_media();
+		$path = SB_DIR . 'assets/js/admin-settings.js';
+		wp_enqueue_script( 'sb-admin-settings', SB_URL . 'assets/js/admin-settings.js', array( 'jquery' ), is_readable( $path ) ? (string) filemtime( $path ) : SB_VERSION, true );
 	}
 
 	public static function register_settings(): void {
@@ -97,13 +108,14 @@ final class Admin {
 			echo '<tr>';
 			echo '<td><strong>' . esc_html( $r['reference'] ) . '</strong></td>';
 			echo '<td>' . esc_html( $when ) . ( $r['return_at'] ? '<br><small>' . esc_html__( 'Return booked', 'sprint-booking' ) . '</small>' : '' ) . '</td>';
-			echo '<td>' . esc_html( $cfg['services'][ $r['service'] ]['label'] ?? $r['service'] ) . '</td>';
+			echo '<td>' . esc_html( $cfg['services'][ $r['service'] ]['label'] ?? $r['service'] ) . ( $r['airport_direction'] ? '<br><small>' . esc_html( ucfirst( $r['airport_direction'] ) ) . '</small>' : '' ) . '</td>';
 			echo '<td>' . esc_html( $first ) . '<br>→ ' . esc_html( $last )
 				. ( $vias ? '<br><small>' . esc_html( sprintf( /* translators: %d: via stops */ _n( '%d via stop', '%d via stops', $vias, 'sprint-booking' ), $vias ) ) . '</small>' : '' )
 				. '<br><small>' . esc_html( sprintf( '%.1f mi', $r['distance_m'] / Pricing::METRES_PER_MILE ) ) . ( $r['route_estimated'] ? ' (est.)' : '' ) . '</small></td>';
 			echo '<td>' . esc_html( (string) $r['passengers'] ) . ' pax<br><small>' . esc_html( $r['luggage'] . ' suitcases, ' . $r['carry_on'] . ' carry-on' ) . '</small><br><small>' . esc_html( $cfg['vehicles'][ $r['vehicle'] ]['label'] ?? $r['vehicle'] ) . '</small></td>';
 			echo '<td>' . esc_html( null === $r['price_pence'] ? __( 'To quote', 'sprint-booking' ) : Settings::money( (int) $r['price_pence'] ) ) . '</td>';
-			echo '<td>' . esc_html( trim( $r['customer_title'] . ' ' . $r['customer_name'] ) ) . '<br><a href="tel:' . esc_attr( preg_replace( '/[^0-9+]/', '', $r['customer_phone'] ) ) . '">' . esc_html( $r['customer_phone'] ) . '</a><br><a href="mailto:' . esc_attr( $r['customer_email'] ) . '">' . esc_html( $r['customer_email'] ) . '</a></td>';
+			$flag = $r['vulnerable_type'] ? '<br><strong style="color:#b32d2e">' . esc_html__( 'Vulnerable solo traveller:', 'sprint-booking' ) . ' ' . esc_html( Rest::VULNERABLE_TYPES[ $r['vulnerable_type'] ] ?? $r['vulnerable_type'] ) . '</strong>' : '';
+			echo '<td>' . esc_html( trim( $r['customer_title'] . ' ' . $r['customer_name'] ) ) . ( $r['user_id'] ? ' <small>(' . esc_html__( 'account', 'sprint-booking' ) . ')</small>' : '' ) . $flag . '<br><a href="tel:' . esc_attr( preg_replace( '/[^0-9+]/', '', $r['customer_phone'] ) ) . '">' . esc_html( $r['customer_phone'] ) . '</a><br><a href="mailto:' . esc_attr( $r['customer_email'] ) . '">' . esc_html( $r['customer_email'] ) . '</a></td>';
 
 			echo '<td><form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 			wp_nonce_field( 'sb_update_status' );
@@ -173,18 +185,28 @@ final class Admin {
 		$int_field( 'min_lead_minutes', __( 'Minimum notice (minutes)', 'sprint-booking' ), (int) $c['min_lead_minutes'], 0, 10080 );
 		printf( '<tr><th scope="row"><label for="sb-mail">%s</label></th><td><input id="sb-mail" name="%s[notify_email]" type="email" class="regular-text" value="%s"><p class="description">%s</p></td></tr>', esc_html__( 'Send booking emails to', 'sprint-booking' ), esc_attr( $name ), esc_attr( $c['notify_email'] ), esc_html__( 'Leave empty to use the site admin email.', 'sprint-booking' ) );
 		printf( '<tr><th scope="row"><label for="sb-route">%s</label></th><td><input id="sb-route" name="%s[routing_base_url]" type="url" class="regular-text" value="%s"><p class="description">%s</p></td></tr>', esc_html__( 'Routing service URL', 'sprint-booking' ), esc_attr( $name ), esc_attr( $c['routing_base_url'] ), esc_html__( 'An OSRM-compatible HTTPS service. The default is the public demo server, which is for testing only — use your own or a paid provider before launch.', 'sprint-booking' ) );
+		printf( '<tr><th scope="row"><label for="sb-geo">%s</label></th><td><input id="sb-geo" name="%s[geocoder_url]" type="url" class="regular-text" value="%s"><p class="description">%s</p></td></tr>', esc_html__( 'Address suggestions URL', 'sprint-booking' ), esc_attr( $name ), esc_attr( $c['geocoder_url'] ), esc_html__( 'A Photon-compatible HTTPS service used for suggestions while typing. The default is a free public server for testing only — self-host Photon or use a paid service before launch.', 'sprint-booking' ) );
+		printf( '<tr><th scope="row">%s</th><td><label><input type="checkbox" name="%s[allow_accounts]" value="1"%s> %s</label></td></tr>', esc_html__( 'Customer accounts', 'sprint-booking' ), esc_attr( $name ), checked( ! empty( $c['allow_accounts'] ), true, false ), esc_html__( 'Let customers register and sign in on the booking form', 'sprint-booking' ) );
 		echo '</table>';
 
-		echo '<h2>' . esc_html__( 'Cars', 'sprint-booking' ) . '</h2><table class="widefat striped" style="max-width:640px"><thead><tr><th>' . esc_html__( 'Car', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Seats', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Suitcases', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Price multiplier', 'sprint-booking' ) . '</th></tr></thead><tbody>';
+		echo '<h2>' . esc_html__( 'Cars', 'sprint-booking' ) . '</h2><table class="widefat striped" style="max-width:760px"><thead><tr><th>' . esc_html__( 'Car', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Photo', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Seats', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Suitcases', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Price multiplier', 'sprint-booking' ) . '</th></tr></thead><tbody>';
 		foreach ( $c['vehicles'] as $key => $v ) {
+			$img_id  = (int) ( $v['image_id'] ?? 0 );
+			$img_url = $img_id ? (string) wp_get_attachment_image_url( $img_id, 'thumbnail' ) : '';
 			printf(
-				'<tr><td>%1$s</td><td>%2$d</td><td>%3$d</td><td><input name="%4$s[vehicles][%5$s][multiplier]" type="number" step="0.05" min="0.5" max="10" class="small-text" value="%6$s"></td></tr>',
+				'<tr><td>%1$s</td><td><div class="sb-photo" data-sb-photo><img src="%7$s" alt="" style="max-width:96px;height:auto;display:%8$s"><input type="hidden" name="%4$s[vehicles][%5$s][image_id]" value="%9$d"><p><button type="button" class="button" data-sb-pick>%10$s</button> <button type="button" class="button-link" data-sb-clear%11$s>%12$s</button></p></div></td><td>%2$d</td><td>%3$d</td><td><input name="%4$s[vehicles][%5$s][multiplier]" type="number" step="0.05" min="0.5" max="10" class="small-text" value="%6$s"></td></tr>',
 				esc_html( $v['label'] ),
 				(int) $v['capacity'],
 				(int) $v['bags'],
 				esc_attr( $name ),
 				esc_attr( $key ),
-				esc_attr( number_format( (float) $v['multiplier'], 2, '.', '' ) )
+				esc_attr( number_format( (float) $v['multiplier'], 2, '.', '' ) ),
+				esc_url( $img_url ),
+				$img_url ? 'block' : 'none',
+				$img_id,
+				esc_html__( 'Choose photo', 'sprint-booking' ),
+				$img_id ? '' : ' hidden',
+				esc_html__( 'Remove', 'sprint-booking' )
 			);
 		}
 		echo '</tbody></table>';

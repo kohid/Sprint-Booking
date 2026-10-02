@@ -67,9 +67,11 @@ final class Shortcode {
 		};
 
 		wp_enqueue_style( 'sb-leaflet', SB_URL . 'assets/vendor/leaflet/leaflet.css', array(), '1.9.4' );
-		wp_enqueue_style( 'sb-booking', SB_URL . 'assets/css/booking-form.css', array( 'sb-leaflet' ), $v( 'assets/css/booking-form.css' ) );
+		wp_enqueue_style( 'sb-flatpickr', SB_URL . 'assets/vendor/flatpickr/flatpickr.min.css', array(), '4.6.13' );
+		wp_enqueue_style( 'sb-booking', SB_URL . 'assets/css/booking-form.css', array( 'sb-leaflet', 'sb-flatpickr' ), $v( 'assets/css/booking-form.css' ) );
 		wp_enqueue_script( 'sb-leaflet', SB_URL . 'assets/vendor/leaflet/leaflet.js', array(), '1.9.4', true );
-		wp_enqueue_script( 'sb-booking', SB_URL . 'assets/js/booking-form.js', array( 'sb-leaflet' ), $v( 'assets/js/booking-form.js' ), true );
+		wp_enqueue_script( 'sb-flatpickr', SB_URL . 'assets/vendor/flatpickr/flatpickr.min.js', array(), '4.6.13', true );
+		wp_enqueue_script( 'sb-booking', SB_URL . 'assets/js/booking-form.js', array( 'sb-leaflet', 'sb-flatpickr' ), $v( 'assets/js/booking-form.js' ), true );
 
 		$vehicles = array();
 		foreach ( $cfg['vehicles'] as $key => $veh ) {
@@ -78,6 +80,9 @@ final class Shortcode {
 				'capacity' => (int) $veh['capacity'],
 				'bags'     => (int) $veh['bags'],
 				'minibus'  => ! empty( $veh['minibus'] ),
+				'type'     => (string) $veh['type'],
+				// A photo from the media library, or '' to use the built-in illustration.
+				'image'    => ! empty( $veh['image_id'] ) ? (string) wp_get_attachment_image_url( (int) $veh['image_id'], 'medium' ) : '',
 			);
 		}
 		$svc = array();
@@ -91,8 +96,23 @@ final class Shortcode {
 
 		$min_pickup = ( new \DateTimeImmutable( '+' . (int) $cfg['min_lead_minutes'] . ' minutes', wp_timezone() ) )->format( 'Y-m-d\TH:i' );
 
+		// A signed-in visitor books against their own account. Their REST requests need the WP
+		// nonce; it is only sent for signed-in visitors, whose pages are not page-cached.
+		$user = null;
+		if ( is_user_logged_in() ) {
+			$u    = wp_get_current_user();
+			$user = array(
+				'name'  => (string) $u->display_name,
+				'email' => (string) $u->user_email,
+				'phone' => (string) get_user_meta( $u->ID, Accounts::META_PHONE, true ),
+			);
+		}
+
 		$config = array(
 			'rest'        => esc_url_raw( rest_url( Rest::NS . '/' ) ),
+			'accounts'    => (bool) $cfg['allow_accounts'],
+			'user'        => $user,
+			'nonce'       => $user ? wp_create_nonce( 'wp_rest' ) : '',
 			'symbol'      => $cfg['currency_symbol'],
 			'maxVias'     => (int) $cfg['max_vias'],
 			'freeLuggage' => (int) $cfg['free_luggage'],

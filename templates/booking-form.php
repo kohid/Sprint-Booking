@@ -13,7 +13,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$uid = 'sb-' . wp_unique_id();
+$uid       = 'sb-' . wp_unique_id();
+$signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 ?>
 <div class="sb-app" data-sb-app>
 	<noscript>
@@ -21,18 +22,6 @@ $uid = 'sb-' . wp_unique_id();
 	</noscript>
 
 	<form class="sb-form" data-sb-form novalidate autocomplete="off">
-
-		<fieldset class="sb-services">
-			<legend class="sb-eyebrow"><?php esc_html_e( 'What do you need?', 'sprint-booking' ); ?></legend>
-			<div class="sb-chips">
-				<?php foreach ( $services as $key => $svc ) : ?>
-					<label class="sb-chip">
-						<input type="radio" name="service" value="<?php echo esc_attr( $key ); ?>" <?php checked( $key, $default ); ?>>
-						<span><?php echo esc_html( $svc['label'] ); ?></span>
-					</label>
-				<?php endforeach; ?>
-			</div>
-		</fieldset>
 
 		<ol class="sb-steps" aria-label="<?php esc_attr_e( 'Booking steps', 'sprint-booking' ); ?>">
 			<li class="sb-step is-current" data-step-tab="1"><span><?php esc_html_e( 'Journey Details', 'sprint-booking' ); ?></span><button type="button" class="sb-step-edit" data-edit-step="1" hidden><?php esc_html_e( 'Edit', 'sprint-booking' ); ?></button></li>
@@ -46,27 +35,36 @@ $uid = 'sb-' . wp_unique_id();
 		<section class="sb-panel" data-panel="1" aria-labelledby="<?php echo esc_attr( $uid ); ?>-h1">
 			<h2 class="sb-h" id="<?php echo esc_attr( $uid ); ?>-h1"><?php esc_html_e( 'Where are you going?', 'sprint-booking' ); ?></h2>
 
-			<div class="sb-quick" data-sb-quick>
-				<span class="sb-quick-label"><?php esc_html_e( 'Quick fill', 'sprint-booking' ); ?></span>
-				<button type="button" class="sb-quick-btn" data-quick="Inverness Airport"><?php esc_html_e( 'Inverness Airport', 'sprint-booking' ); ?></button>
-				<button type="button" class="sb-quick-btn" data-quick="Inverness railway station"><?php esc_html_e( 'Inverness station', 'sprint-booking' ); ?></button>
+			<div class="sb-grid">
+				<div class="sb-field">
+					<label for="<?php echo esc_attr( $uid ); ?>-service"><?php esc_html_e( 'Service', 'sprint-booking' ); ?></label>
+					<select id="<?php echo esc_attr( $uid ); ?>-service" name="service">
+						<?php foreach ( $services as $key => $svc ) : ?>
+							<option value="<?php echo esc_attr( $key ); ?>" <?php selected( $key, $default ); ?>><?php echo esc_html( $svc['label'] ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<div class="sb-field" data-sb-only="airport" hidden>
+					<label for="<?php echo esc_attr( $uid ); ?>-direction"><?php esc_html_e( 'Airport transfer', 'sprint-booking' ); ?></label>
+					<select id="<?php echo esc_attr( $uid ); ?>-direction" name="airport_direction">
+						<option value=""><?php esc_html_e( 'Choose departure or arrival', 'sprint-booking' ); ?></option>
+						<option value="departure"><?php esc_html_e( 'Departure (to the airport)', 'sprint-booking' ); ?></option>
+						<option value="arrival"><?php esc_html_e( 'Arrival (from the airport)', 'sprint-booking' ); ?></option>
+					</select>
+				</div>
 			</div>
 
+			<!-- Pickup, via stops, the Add via stop button, then drop-off: built by JS. -->
 			<ol class="sb-route" data-sb-stops></ol>
-
-			<button type="button" class="sb-btn sb-btn--ghost sb-add-via" data-sb-add-via>
-				<span aria-hidden="true">+</span>
-				<span data-sb-add-via-label><?php esc_html_e( 'Add a via stop', 'sprint-booking' ); ?></span>
-			</button>
 
 			<div class="sb-grid">
 				<div class="sb-field">
 					<label for="<?php echo esc_attr( $uid ); ?>-pickup-date"><?php esc_html_e( 'Pickup date', 'sprint-booking' ); ?></label>
-					<input type="date" id="<?php echo esc_attr( $uid ); ?>-pickup-date" name="pickup_date" required>
+					<input type="text" id="<?php echo esc_attr( $uid ); ?>-pickup-date" name="pickup_date" class="sb-date" placeholder="<?php esc_attr_e( 'Select a date', 'sprint-booking' ); ?>" required readonly>
 				</div>
 				<div class="sb-field">
 					<label for="<?php echo esc_attr( $uid ); ?>-pickup-time"><?php esc_html_e( 'Pickup time', 'sprint-booking' ); ?></label>
-					<input type="time" id="<?php echo esc_attr( $uid ); ?>-pickup-time" name="pickup_time" step="300" required>
+					<input type="text" id="<?php echo esc_attr( $uid ); ?>-pickup-time" name="pickup_time" class="sb-time" placeholder="<?php esc_attr_e( 'Select a time', 'sprint-booking' ); ?>" required readonly>
 				</div>
 			</div>
 
@@ -79,14 +77,33 @@ $uid = 'sb-' . wp_unique_id();
 				<div class="sb-grid">
 					<div class="sb-field">
 						<label for="<?php echo esc_attr( $uid ); ?>-return-date"><?php esc_html_e( 'Return pickup date', 'sprint-booking' ); ?></label>
-						<input type="date" id="<?php echo esc_attr( $uid ); ?>-return-date" name="return_date">
+						<input type="text" id="<?php echo esc_attr( $uid ); ?>-return-date" name="return_date" class="sb-date" placeholder="<?php esc_attr_e( 'Select a date', 'sprint-booking' ); ?>" readonly>
 					</div>
 					<div class="sb-field">
 						<label for="<?php echo esc_attr( $uid ); ?>-return-time"><?php esc_html_e( 'Return pickup time', 'sprint-booking' ); ?></label>
-						<input type="time" id="<?php echo esc_attr( $uid ); ?>-return-time" name="return_time" step="300">
+						<input type="text" id="<?php echo esc_attr( $uid ); ?>-return-time" name="return_time" class="sb-time" placeholder="<?php esc_attr_e( 'Select a time', 'sprint-booking' ); ?>" readonly>
 					</div>
 				</div>
 				<p class="sb-hint"><?php esc_html_e( 'The return follows the same route in reverse, with the same via stops.', 'sprint-booking' ); ?></p>
+			</div>
+
+			<div class="sb-vulnerable">
+				<label class="sb-check">
+					<input type="checkbox" name="vulnerable" value="1" data-sb-vulnerable>
+					<span><?php esc_html_e( 'Vulnerable solo traveller', 'sprint-booking' ); ?></span>
+				</label>
+				<div class="sb-field" data-sb-vulnerable-field hidden>
+					<label for="<?php echo esc_attr( $uid ); ?>-vtype"><?php esc_html_e( 'Type', 'sprint-booking' ); ?></label>
+					<select id="<?php echo esc_attr( $uid ); ?>-vtype" name="vulnerable_type">
+						<option value=""><?php esc_html_e( 'Select a type', 'sprint-booking' ); ?></option>
+						<option value="lone_female"><?php esc_html_e( 'Lone Female', 'sprint-booking' ); ?></option>
+						<option value="minor"><?php esc_html_e( 'Minor under the age of 16', 'sprint-booking' ); ?></option>
+						<option value="disabled"><?php esc_html_e( 'Disabled', 'sprint-booking' ); ?></option>
+						<option value="senior"><?php esc_html_e( 'Senior Citizen', 'sprint-booking' ); ?></option>
+						<option value="other"><?php esc_html_e( 'Other', 'sprint-booking' ); ?></option>
+					</select>
+					<p class="sb-hint"><?php esc_html_e( 'Optional. We use this only to look after your journey, and it is passed to the dispatcher with your booking.', 'sprint-booking' ); ?></p>
+				</div>
 			</div>
 		</section>
 
@@ -135,8 +152,38 @@ $uid = 'sb-' . wp_unique_id();
 
 			<div class="sb-card" data-sb-review></div>
 
+			<?php if ( $signed_in ) : ?>
+				<p class="sb-account-note">
+					<?php
+					printf(
+						/* translators: %s: customer name */
+						esc_html__( 'Booking as %s.', 'sprint-booking' ),
+						'<strong>' . esc_html( $signed_in->display_name ) . '</strong>'
+					);
+					?>
+					<a href="<?php echo esc_url( wp_logout_url( get_permalink() ?: home_url( '/' ) ) ); ?>"><?php esc_html_e( 'Not you? Log out', 'sprint-booking' ); ?></a>
+				</p>
+				<input type="hidden" name="account_mode" value="account">
+			<?php else : ?>
+				<fieldset class="sb-account" data-sb-account>
+					<legend class="sb-eyebrow"><?php esc_html_e( 'What would you like to do next?', 'sprint-booking' ); ?></legend>
+					<label class="sb-radio">
+						<input type="radio" name="account_mode" value="guest" checked>
+						<span><?php esc_html_e( 'Book as Guest', 'sprint-booking' ); ?></span>
+					</label>
+					<label class="sb-radio" data-sb-account-only>
+						<input type="radio" name="account_mode" value="register">
+						<span><?php esc_html_e( 'Register to manage your bookings on the go!', 'sprint-booking' ); ?></span>
+					</label>
+					<label class="sb-radio" data-sb-account-only>
+						<input type="radio" name="account_mode" value="login">
+						<span><?php esc_html_e( 'Sign in to book with your saved details', 'sprint-booking' ); ?></span>
+					</label>
+				</fieldset>
+			<?php endif; ?>
+
 			<div class="sb-grid sb-grid--title">
-				<div class="sb-field">
+				<div class="sb-field" data-sb-details>
 					<label for="<?php echo esc_attr( $uid ); ?>-title"><?php esc_html_e( 'Title', 'sprint-booking' ); ?></label>
 					<select id="<?php echo esc_attr( $uid ); ?>-title" name="title">
 						<option value=""><?php esc_html_e( 'Select', 'sprint-booking' ); ?></option>
@@ -145,43 +192,35 @@ $uid = 'sb-' . wp_unique_id();
 						<?php endforeach; ?>
 					</select>
 				</div>
-				<div class="sb-field">
-					<label for="<?php echo esc_attr( $uid ); ?>-name"><?php esc_html_e( 'Full name', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-name" name="name" maxlength="100" autocomplete="name" required>
+				<div class="sb-field" data-sb-details>
+					<label for="<?php echo esc_attr( $uid ); ?>-name"><?php esc_html_e( 'Full name', 'sprint-booking' ); ?> <span class="sb-optional" data-sb-saved-hint hidden><?php esc_html_e( '(leave blank to use your saved name)', 'sprint-booking' ); ?></span></label>
+					<input type="text" id="<?php echo esc_attr( $uid ); ?>-name" name="name" maxlength="100" autocomplete="name">
 				</div>
 			</div>
 			<div class="sb-grid">
-				<div class="sb-field">
-					<label for="<?php echo esc_attr( $uid ); ?>-email"><?php esc_html_e( 'Email', 'sprint-booking' ); ?></label>
-					<input type="email" id="<?php echo esc_attr( $uid ); ?>-email" name="email" maxlength="100" autocomplete="email" required>
+				<div class="sb-field" data-sb-email>
+					<label for="<?php echo esc_attr( $uid ); ?>-email" data-sb-email-label><?php esc_html_e( 'Email', 'sprint-booking' ); ?></label>
+					<input type="email" id="<?php echo esc_attr( $uid ); ?>-email" name="email" maxlength="100" autocomplete="email">
 				</div>
-				<div class="sb-field">
-					<label for="<?php echo esc_attr( $uid ); ?>-phone"><?php esc_html_e( 'Mobile number', 'sprint-booking' ); ?></label>
-					<input type="tel" id="<?php echo esc_attr( $uid ); ?>-phone" name="phone" maxlength="25" autocomplete="tel" inputmode="tel" placeholder="<?php esc_attr_e( 'Include +country code if abroad', 'sprint-booking' ); ?>" required>
+				<div class="sb-field" data-sb-details>
+					<label for="<?php echo esc_attr( $uid ); ?>-phone"><?php esc_html_e( 'Mobile number', 'sprint-booking' ); ?> <span class="sb-optional" data-sb-saved-hint hidden><?php esc_html_e( '(leave blank to use your saved number)', 'sprint-booking' ); ?></span></label>
+					<input type="tel" id="<?php echo esc_attr( $uid ); ?>-phone" name="phone" maxlength="25" autocomplete="tel" inputmode="tel" placeholder="<?php esc_attr_e( 'Include +country code if abroad', 'sprint-booking' ); ?>">
 				</div>
 			</div>
-
-			<div class="sb-grid">
-				<div class="sb-field">
-					<label for="<?php echo esc_attr( $uid ); ?>-pickup-detail"><?php esc_html_e( 'Pickup full address', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-pickup-detail" name="pickup_detail" maxlength="200" placeholder="<?php esc_attr_e( 'House or flat number, street, postcode', 'sprint-booking' ); ?>">
-				</div>
-				<div class="sb-field">
-					<label for="<?php echo esc_attr( $uid ); ?>-dropoff-detail"><?php esc_html_e( 'Drop-off full address', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-dropoff-detail" name="dropoff_detail" maxlength="200" placeholder="<?php esc_attr_e( 'House or flat number, street, postcode', 'sprint-booking' ); ?>">
-				</div>
+			<div class="sb-field" data-sb-password hidden>
+				<label for="<?php echo esc_attr( $uid ); ?>-password" data-sb-password-label><?php esc_html_e( 'Password', 'sprint-booking' ); ?></label>
+				<input type="password" id="<?php echo esc_attr( $uid ); ?>-password" name="password" autocomplete="off" maxlength="100">
+				<p class="sb-hint" data-sb-password-hint></p>
 			</div>
 
-			<div class="sb-grid">
-				<div class="sb-field" data-sb-only="airport" hidden>
-					<label for="<?php echo esc_attr( $uid ); ?>-flight"><?php esc_html_e( 'Flight number (optional)', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-flight" name="flight_no" maxlength="20" placeholder="BA1234">
-					<p class="sb-hint"><?php esc_html_e( 'Helps your driver track delays.', 'sprint-booking' ); ?></p>
-				</div>
-				<div class="sb-field" data-sb-only="corporate" hidden>
-					<label for="<?php echo esc_attr( $uid ); ?>-company"><?php esc_html_e( 'Company name (optional)', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-company" name="company" maxlength="100">
-				</div>
+			<div class="sb-field" data-sb-only="airport" hidden>
+				<label for="<?php echo esc_attr( $uid ); ?>-flight"><?php esc_html_e( 'Flight number (optional)', 'sprint-booking' ); ?></label>
+				<input type="text" id="<?php echo esc_attr( $uid ); ?>-flight" name="flight_no" maxlength="20" placeholder="BA1234">
+				<p class="sb-hint"><?php esc_html_e( 'Helps your driver track delays.', 'sprint-booking' ); ?></p>
+			</div>
+			<div class="sb-field" data-sb-only="corporate" hidden>
+				<label for="<?php echo esc_attr( $uid ); ?>-company"><?php esc_html_e( 'Company name (optional)', 'sprint-booking' ); ?></label>
+				<input type="text" id="<?php echo esc_attr( $uid ); ?>-company" name="company" maxlength="100">
 			</div>
 
 			<div class="sb-field">

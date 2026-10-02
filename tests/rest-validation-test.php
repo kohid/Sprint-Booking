@@ -33,7 +33,7 @@ function call( string $m, ...$args ) { $r = new ReflectionMethod( Rest::class, $
 
 $in_future = ( new DateTimeImmutable( '+2 days', wp_timezone() ) )->format( 'Y-m-d\TH:i' );
 $soon      = ( new DateTimeImmutable( '+10 minutes', wp_timezone() ) )->format( 'Y-m-d\TH:i' );
-$good = array( 'service' => 'airport', 'vehicle' => 'saloon', 'passengers' => 2, 'luggage' => 1, 'pickup_at' => $in_future );
+$good = array( 'service' => 'airport', 'vehicle' => 'saloon', 'passengers' => 2, 'luggage' => 1, 'pickup_at' => $in_future, 'airport_direction' => 'departure' );
 
 // Options.
 t( 'accepts a valid booking', is_array( call( 'read_options', $cfg, $good, true ) ) );
@@ -46,8 +46,18 @@ t( 'pickup inside minimum notice rejected', is_wp_error( call( 'read_options', $
 t( 'garbage pickup time rejected', is_wp_error( call( 'read_options', $cfg, array_merge( $good, array( 'pickup_at' => '2026-13-45T99:99' ) ), true ) ) );
 t( 'return before pickup rejected', is_wp_error( call( 'read_options', $cfg, array_merge( $good, array( 'is_return' => true, 'return_at' => ( new DateTimeImmutable( '+1 day', wp_timezone() ) )->format( 'Y-m-d\TH:i' ) ) ), true ) ) );
 t( 'return after pickup accepted', is_array( call( 'read_options', $cfg, array_merge( $good, array( 'is_return' => true, 'return_at' => ( new DateTimeImmutable( '+3 days', wp_timezone() ) )->format( 'Y-m-d\TH:i' ) ) ), true ) ) );
-$q = call( 'read_options', $cfg, array( 'service' => 'airport', 'passengers' => 6 ), false );
+$q = call( 'read_options', $cfg, array( 'service' => 'airport', 'airport_direction' => 'arrival', 'passengers' => 6 ), false );
 t( 'quote without a vehicle picks one that seats everyone', is_array( $q ) && $q['vehicle'] === 'mpv' );
+
+// Airport direction, vulnerable solo traveller.
+t( 'airport transfer needs departure or arrival', is_wp_error( call( 'read_options', $cfg, array_diff_key( $good, array( 'airport_direction' => 1 ) ), true ) ) );
+t( 'airport transfer accepts departure', is_array( call( 'read_options', $cfg, array_merge( $good, array( 'airport_direction' => 'departure' ) ), true ) ) );
+t( 'airport transfer rejects other directions', is_wp_error( call( 'read_options', $cfg, array_merge( $good, array( 'airport_direction' => 'sideways' ) ), true ) ) );
+t( 'other services ignore the direction', '' === call( 'read_options', $cfg, array_merge( $good, array( 'service' => 'corporate', 'airport_direction' => 'arrival' ) ), true )['airport_direction'] );
+$air = array_merge( $good, array( 'airport_direction' => 'arrival' ) );
+t( 'vulnerable type is stored when ticked', 'senior' === call( 'read_options', $cfg, array_merge( $air, array( 'vulnerable' => true, 'vulnerable_type' => 'senior' ) ), true )['vulnerable_type'] );
+t( 'vulnerable type is dropped when not ticked', '' === call( 'read_options', $cfg, array_merge( $air, array( 'vulnerable_type' => 'senior' ) ), true )['vulnerable_type'] );
+t( 'ticked without a valid type is rejected', is_wp_error( call( 'read_options', $cfg, array_merge( $air, array( 'vulnerable' => true, 'vulnerable_type' => 'made-up' ) ), true ) ) );
 
 // Stops.
 $a = array( 'label' => 'A', 'lat' => 57.5, 'lng' => -4.1 );

@@ -4,7 +4,7 @@
  * Uses tiny stand-ins for the WordPress functions involved.
  */
 define( 'ABSPATH', __DIR__ . '/' );
-define( 'SB_VERSION', '0.1.0' );
+define( 'SB_VERSION', '0.1.0' ); // The installed version under test; releases in the tests are newer.
 define( 'SB_FILE', '/wp/wp-content/plugins/sprint-booking/sprint-booking.php' );
 define( 'HOUR_IN_SECONDS', 3600 );
 define( 'MINUTE_IN_SECONDS', 60 );

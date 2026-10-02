@@ -23,6 +23,7 @@ for f in sprint-booking.php includes/*.php templates/*.php; do php -l "$f" >/dev
 php tests/pricing-test.php >/dev/null
 php tests/rest-validation-test.php >/dev/null
 php tests/updater-test.php >/dev/null
+php tests/geocoder-test.php >/dev/null
 
 mkdir -p dist
 rm -f dist/sprint-booking.zip

@@ -2,7 +2,7 @@
 /**
  * Public REST endpoints used by the booking form.
  *
- *   GET  /sprint-booking/v1/geocode?q=…   address search
+ *   GET  /sprint-booking/v1/geocode?q=…   address suggestions while typing
  *   POST /sprint-booking/v1/quote         route + fare for the current form state
  *   POST /sprint-booking/v1/bookings      create a booking (the price is always recomputed here)
  *
@@ -28,6 +28,19 @@ final class Rest {
 	private const LAT_MAX = 60.9;
 	private const LNG_MIN = -8.7;
 	private const LNG_MAX = 1.8;
+
+	public const TITLES = array( 'Mr', 'Mrs', 'Miss', 'Ms', 'Mx', 'Dr' );
+
+	/** Keys sent by the form => label stored in emails and the admin list. */
+	public const VULNERABLE_TYPES = array(
+		'lone_female' => 'Lone female',
+		'minor'       => 'Minor under the age of 16',
+		'disabled'    => 'Disabled',
+		'senior'      => 'Senior citizen',
+		'other'       => 'Other',
+	);
+
+	public const ACCOUNT_MODES = array( 'guest', 'register', 'login', 'account' );
 
 	public static function register(): void {
 		register_rest_route(
@@ -69,7 +82,8 @@ final class Rest {
 	// ── Handlers ──────────────────────────────────────────────────
 
 	public static function geocode( \WP_REST_Request $req ) {
-		if ( ! RateLimit::allow( 'geocode', 20, MINUTE_IN_SECONDS ) ) {
+		// Suggestions fire as the customer types (debounced in the browser), so the limit is generous.
+		if ( ! RateLimit::allow( 'geocode', 90, MINUTE_IN_SECONDS ) ) {
 			return self::too_many();
 		}
 		$rows = Geocoder::search( (string) $req->get_param( 'q' ) );
@@ -117,39 +131,84 @@ final class Rest {
 		if ( is_wp_error( $stops ) ) {
 			return $stops;
 		}
+
+		// Who is booking: guest, new account, existing customer, or an already signed-in customer.
+		$mode = (string) ( $in['account_mode'] ?? 'guest' );
+		if ( ! in_array( $mode, self::ACCOUNT_MODES, true ) ) {
+			$mode = 'guest';
+		}
+		$user_id = 0;
+		$signed  = null;
+
+		if ( 'account' === $mode ) {
+			$user_id = get_current_user_id();
+			if ( $user_id < 1 ) {
+				return self::bad( __( 'Please sign in again to book with your account.', 'sprint-booking' ) );
+			}
+			$profile = Accounts::profile( $user_id );
+			$in['email'] = $profile['email'];
+			$in['name']  = trim( (string) ( $in['name'] ?? '' ) ) !== '' ? $in['name'] : $profile['name'];
+			$in['phone'] = trim( (string) ( $in['phone'] ?? '' ) ) !== '' ? $in['phone'] : $profile['phone'];
+		} elseif ( 'login' === $mode ) {
+			$signed = Accounts::authenticate( sanitize_email( (string) ( $in['email'] ?? '' ) ), (string) ( $in['password'] ?? '' ) );
+			if ( is_wp_error( $signed ) ) {
+				return $signed;
+			}
+			$user_id = (int) $signed->ID;
+			$profile = Accounts::profile( $user_id );
+			$in['email'] = $profile['email'];
+			$in['name']  = trim( (string) ( $in['name'] ?? '' ) ) !== '' ? $in['name'] : $profile['name'];
+			$in['phone'] = trim( (string) ( $in['phone'] ?? '' ) ) !== '' ? $in['phone'] : $profile['phone'];
+		}
+
 		$contact = self::read_contact( $in );
 		if ( is_wp_error( $contact ) ) {
 			return $contact;
 		}
 
+		// Price first: if anything above or here fails, no account has been created yet.
 		$q     = self::build_quote( $cfg, $stops, $opts );
 		$quote = $q['quote_only'];
 
+		if ( 'register' === $mode ) {
+			$user_id = Accounts::register( $contact['name'], $contact['email'], $contact['phone'], (string) ( $in['password'] ?? '' ) );
+			if ( is_wp_error( $user_id ) ) {
+				return $user_id;
+			}
+		}
+		if ( $user_id > 0 ) {
+			Accounts::remember_phone( $user_id, $contact['phone'] );
+			if ( 'register' === $mode || 'login' === $mode ) {
+				Accounts::start_session( $user_id );
+			}
+		}
+
 		$row = array(
-			'status'          => $quote ? 'quote_requested' : 'new',
-			'service'         => $opts['service'],
-			'vehicle'         => $opts['vehicle'],
-			'passengers'      => $opts['passengers'],
-			'luggage'         => $opts['luggage'],
-			'carry_on'        => $opts['carry_on'],
-			'pickup_at'       => $opts['pickup_utc'],
-			'return_at'       => $opts['return_utc'],
-			'stops'           => wp_json_encode( $stops ),
-			'distance_m'      => $q['distance_m'],
-			'duration_s'      => $q['duration_s'],
-			'route_estimated' => $q['estimated'] ? 1 : 0,
-			'price_pence'     => $quote ? null : $q['total_pence'],
-			'price_lines'     => $quote ? null : wp_json_encode( $q['lines'] ),
-			'customer_title'  => $contact['title'],
-			'customer_name'   => $contact['name'],
-			'customer_phone'  => $contact['phone'],
-			'customer_email'  => $contact['email'],
-			'pickup_detail'   => $contact['pickup_detail'],
-			'dropoff_detail'  => $contact['dropoff_detail'],
-			'flight_no'       => $contact['flight_no'],
-			'company'         => $contact['company'],
-			'notes'           => $contact['notes'],
-			'created_at'      => gmdate( 'Y-m-d H:i:s' ),
+			'status'            => $quote ? 'quote_requested' : 'new',
+			'service'           => $opts['service'],
+			'airport_direction' => $opts['airport_direction'],
+			'vehicle'           => $opts['vehicle'],
+			'passengers'        => $opts['passengers'],
+			'luggage'           => $opts['luggage'],
+			'carry_on'          => $opts['carry_on'],
+			'vulnerable_type'   => $opts['vulnerable_type'],
+			'pickup_at'         => $opts['pickup_utc'],
+			'return_at'         => $opts['return_utc'],
+			'stops'             => wp_json_encode( $stops ),
+			'distance_m'        => $q['distance_m'],
+			'duration_s'        => $q['duration_s'],
+			'route_estimated'   => $q['estimated'] ? 1 : 0,
+			'price_pence'       => $quote ? null : $q['total_pence'],
+			'price_lines'       => $quote ? null : wp_json_encode( $q['lines'] ),
+			'user_id'           => $user_id > 0 ? $user_id : null,
+			'customer_title'    => $contact['title'],
+			'customer_name'     => $contact['name'],
+			'customer_phone'    => $contact['phone'],
+			'customer_email'    => $contact['email'],
+			'flight_no'         => 'airport' === $opts['service'] ? $contact['flight_no'] : '',
+			'company'           => 'corporate' === $opts['service'] ? $contact['company'] : '',
+			'notes'             => $contact['notes'],
+			'created_at'        => gmdate( 'Y-m-d H:i:s' ),
 		);
 
 		$saved = Bookings::insert( $row );
@@ -167,6 +226,8 @@ final class Rest {
 				'status'      => $row['status'],
 				'quote_only'  => $quote,
 				'total_pence' => $row['price_pence'],
+				'signed_in'   => $user_id > 0 && in_array( $mode, array( 'register', 'login' ), true ),
+				'registered'  => 'register' === $mode,
 			)
 		);
 	}
@@ -226,6 +287,14 @@ final class Rest {
 			return self::bad( __( 'Choose a service.', 'sprint-booking' ) );
 		}
 
+		$direction = '';
+		if ( 'airport' === $service ) {
+			$direction = sanitize_key( (string) ( $in['airport_direction'] ?? '' ) );
+			if ( ! in_array( $direction, array( 'departure', 'arrival' ), true ) ) {
+				return self::bad( __( 'Choose whether this is a departure or an arrival.', 'sprint-booking' ) );
+			}
+		}
+
 		$vehicle = sanitize_key( (string) ( $in['vehicle'] ?? '' ) );
 		if ( '' === $vehicle ) {
 			// The quote call may arrive before a vehicle is chosen: price the first allowed one that seats everyone.
@@ -262,15 +331,25 @@ final class Rest {
 			return self::bad( __( 'Enter between 0 and 10 carry-on bags.', 'sprint-booking' ) );
 		}
 
+		$vulnerable = '';
+		if ( ! empty( $in['vulnerable'] ) ) {
+			$vulnerable = sanitize_key( (string) ( $in['vulnerable_type'] ?? '' ) );
+			if ( ! isset( self::VULNERABLE_TYPES[ $vulnerable ] ) ) {
+				return self::bad( __( 'Choose the type of vulnerable solo traveller, or untick the box.', 'sprint-booking' ) );
+			}
+		}
+
 		$opts = array(
-			'service'    => $service,
-			'vehicle'    => $vehicle,
-			'passengers' => $passengers,
-			'luggage'    => $luggage,
-			'carry_on'   => $carry_on,
-			'is_return'  => ! empty( $in['is_return'] ),
-			'pickup_utc' => null,
-			'return_utc' => null,
+			'service'           => $service,
+			'airport_direction' => $direction,
+			'vehicle'           => $vehicle,
+			'passengers'        => $passengers,
+			'luggage'           => $luggage,
+			'carry_on'          => $carry_on,
+			'vulnerable_type'   => $vulnerable,
+			'is_return'         => ! empty( $in['is_return'] ),
+			'pickup_utc'        => null,
+			'return_utc'        => null,
 		);
 
 		if ( $need_times ) {
@@ -322,7 +401,7 @@ final class Rest {
 		$out = array();
 		foreach ( $raw as $s ) {
 			if ( ! is_array( $s ) || ! isset( $s['lat'], $s['lng'] ) || ! is_numeric( $s['lat'] ) || ! is_numeric( $s['lng'] ) ) {
-				return self::bad( __( 'Every stop needs an address chosen from the search results.', 'sprint-booking' ) );
+				return self::bad( __( 'Every stop needs an address chosen from the suggestions.', 'sprint-booking' ) );
 			}
 			$lat = (float) $s['lat'];
 			$lng = (float) $s['lng'];
@@ -339,7 +418,7 @@ final class Rest {
 	}
 
 	/**
-	 * @return array{title:string,pickup_detail:string,dropoff_detail:string,name:string,phone:string,email:string,flight_no:string,company:string,notes:string}|\WP_Error
+	 * @return array{title:string,name:string,phone:string,email:string,flight_no:string,company:string,notes:string}|\WP_Error
 	 */
 	private static function read_contact( array $in ) {
 		$name  = trim( sanitize_text_field( (string) ( $in['name'] ?? '' ) ) );
@@ -361,9 +440,7 @@ final class Rest {
 
 		$title = (string) ( $in['title'] ?? '' );
 		return array(
-			'title'          => in_array( $title, array( 'Mr', 'Mrs', 'Miss', 'Ms', 'Mx', 'Dr' ), true ) ? $title : '',
-			'pickup_detail'  => mb_substr( sanitize_text_field( (string) ( $in['pickup_detail'] ?? '' ) ), 0, 200 ),
-			'dropoff_detail' => mb_substr( sanitize_text_field( (string) ( $in['dropoff_detail'] ?? '' ) ), 0, 200 ),
+			'title'     => in_array( $title, self::TITLES, true ) ? $title : '',
 			'name'      => $name,
 			'phone'     => $phone,
 			'email'     => $email,
