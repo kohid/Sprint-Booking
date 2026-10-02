@@ -61,13 +61,13 @@ final class Mailer {
 
 		// Office copy: reply-to the customer. Header values come from sanitised input; strip any CR/LF regardless.
 		$reply = 'Reply-To: ' . str_replace( array( "\r", "\n" ), '', $b['customer_name'] ) . ' <' . $b['customer_email'] . '>';
-		wp_mail( $office, ( $quote ? 'Quote request ' : 'New booking ' ) . $b['reference'], $body, array( $reply ) );
+		self::send( $office, ( $quote ? 'Quote request ' : 'New booking ' ) . $b['reference'], $body, array( $reply ), 'office' );
 
 		// Customer copy.
 		$intro = $quote
 			? "Thanks for your enquiry. We will price this and get back to you shortly.\n\n"
 			: "Thanks for booking. Your booking is received and we will confirm it shortly. Pay your driver at the end of the journey.\n\n";
-		wp_mail( $b['customer_email'], ( $quote ? 'We received your quote request ' : 'We received your booking ' ) . $b['reference'], $intro . $body );
+		self::send( $b['customer_email'], ( $quote ? 'We received your quote request ' : 'We received your booking ' ) . $b['reference'], $intro . $body, array( 'Reply-To: ' . $office ), 'customer' );
 	}
 
 	/** Tell the customer when staff confirm, assign or cancel their booking. */
@@ -84,6 +84,56 @@ final class Mailer {
 		$tz   = wp_timezone();
 		$when = ( new \DateTimeImmutable( $b['pickup_at'], new \DateTimeZone( 'UTC' ) ) )->setTimezone( $tz )->format( 'D j M Y, H:i' );
 		$body = $messages[ $status ][1] . "\n\nReference: " . $b['reference'] . "\nPickup at: " . $when;
-		wp_mail( $b['customer_email'], $messages[ $status ][0] . ' ' . $b['reference'], $body );
+		self::send( $b['customer_email'], $messages[ $status ][0] . ' ' . $b['reference'], $body, array(), 'status' );
+	}
+
+	public const LOG_OPTION = 'sb_mail_log';
+	private const LOG_KEEP  = 30;
+
+	/**
+	 * wp_mail() with a record of what happened. WordPress hands mail to your SMTP plugin; if that
+	 * refuses (unverified sender, wrong key) the only trace is wp_mail_failed, which we keep here.
+	 *
+	 * @param string[] $headers
+	 */
+	public static function send( string $to, string $subject, string $body, array $headers, string $kind ): bool {
+		$error   = '';
+		$capture = static function ( $err ) use ( &$error ): void {
+			$error = $err instanceof \WP_Error ? $err->get_error_message() : 'Unknown mail error';
+		};
+		add_action( 'wp_mail_failed', $capture );
+		try {
+			$ok = (bool) wp_mail( $to, $subject, $body, $headers );
+		} catch ( \Throwable $e ) {
+			$ok    = false;
+			$error = $e->getMessage();
+		}
+		remove_action( 'wp_mail_failed', $capture );
+
+		self::log( $to, $subject, $kind, $ok, $ok ? '' : ( $error ?: 'wp_mail() returned false' ) );
+		return $ok;
+	}
+
+	private static function log( string $to, string $subject, string $kind, bool $ok, string $error ): void {
+		$log = get_option( self::LOG_OPTION, array() );
+		$log = is_array( $log ) ? $log : array();
+		array_unshift(
+			$log,
+			array(
+				'time'    => time(),
+				'to'      => $to,
+				'subject' => $subject,
+				'kind'    => $kind,
+				'ok'      => $ok,
+				'error'   => mb_substr( wp_strip_all_tags( $error ), 0, 300 ),
+			)
+		);
+		update_option( self::LOG_OPTION, array_slice( $log, 0, self::LOG_KEEP ), false );
+	}
+
+	/** @return array<int,array{time:int,to:string,subject:string,kind:string,ok:bool,error:string}> */
+	public static function log_entries(): array {
+		$log = get_option( self::LOG_OPTION, array() );
+		return is_array( $log ) ? $log : array();
 	}
 }

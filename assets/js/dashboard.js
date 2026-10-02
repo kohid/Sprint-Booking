@@ -556,6 +556,8 @@
 			shell: shell,
 			view: root.getAttribute( 'data-view' ) || 'overview',
 			bookingsUrl: root.getAttribute( 'data-bookings-url' ) || '',
+			overviewUrl: root.getAttribute( 'data-overview-url' ) || '',
+			paged: !! ( root.getAttribute( 'data-overview-url' ) && root.getAttribute( 'data-bookings-url' ) ),
 			perPage: parseInt( root.getAttribute( 'data-per-page' ), 10 ) || 25,
 			filters: { q: '', status: root.getAttribute( 'data-status' ) || '', from: '', to: '', sort: 'newest' },
 			page: 1,
@@ -565,7 +567,7 @@
 			updateNav: function () {},
 			canFilter: function () { return app.shell === 'aside' || !! app.bookingsUrl; },
 			goBookings: function ( status ) {
-				if ( app.shell === 'aside' ) { app.filters.status = status || ''; app.page = 1; show( 'bookings' ); return; }
+				if ( app.shell === 'aside' && ! app.paged ) { app.filters.status = status || ''; app.page = 1; show( 'bookings' ); return; }
 				if ( app.bookingsUrl ) { window.location.href = app.bookingsUrl + ( status ? ( app.bookingsUrl.indexOf( '?' ) > -1 ? '&' : '?' ) + 'status=' + encodeURIComponent( status ) : '' ); }
 			},
 			viewAll: function ( sort ) {
@@ -578,6 +580,8 @@
 		var urlStatus = new URLSearchParams( window.location.search ).get( 'status' );
 		if ( urlStatus && ! app.filters.status ) { app.filters.status = urlStatus; }
 
+		var full = root.getAttribute( 'data-full' );
+		if ( full ) { root.classList.add( 'sb-d-full', 'sb-d-full--' + full ); }
 		root.textContent = '';
 		var content = el( 'div', { 'class': 'sb-d-content', 'data-sb-content': '' } );
 		var title = el( 'h1', { 'class': 'sb-d-title' } );
@@ -590,7 +594,7 @@
 			app.view = view;
 			title.textContent = TITLES[ view ];
 			Object.keys( navButtons ).forEach( function ( k ) { navButtons[ k ].setAttribute( 'aria-current', k === view ? 'page' : 'false' ); navButtons[ k ].classList.toggle( 'is-active', k === view ); } );
-			if ( shell === 'aside' && window.history && history.replaceState ) { history.replaceState( null, '', '#' + view ); }
+			if ( shell === 'aside' && ! app.paged && window.history && history.replaceState ) { history.replaceState( null, '', '#' + view ); }
 			content.textContent = '';
 			( view === 'bookings' ? renderBookings : renderOverview )( app, content );
 		}
@@ -599,7 +603,11 @@
 			var nav = el( 'nav', { 'class': 'sb-d-nav', 'aria-label': 'Dashboard' } );
 			[ [ 'overview', 'grid', 'Overview' ], [ 'bookings', 'list', 'Bookings' ] ].forEach( function ( v ) {
 				var count = el( 'span', { 'class': 'sb-d-nav__count', hidden: true } );
-				var b = el( 'button', { type: 'button', 'class': 'sb-d-nav__item', onclick: function () { if ( v[ 0 ] === 'bookings' ) { app.filters.status = ''; } show( v[ 0 ] ); } }, [ icon( v[ 1 ] ), el( 'span', { text: v[ 2 ] } ), v[ 0 ] === 'bookings' ? count : null ] );
+				var b = el( 'button', { type: 'button', 'class': 'sb-d-nav__item', onclick: function () {
+					if ( app.paged ) { window.location.href = v[ 0 ] === 'bookings' ? app.bookingsUrl : app.overviewUrl; return; }
+					if ( v[ 0 ] === 'bookings' ) { app.filters.status = ''; }
+					show( v[ 0 ] );
+				} }, [ icon( v[ 1 ] ), el( 'span', { text: v[ 2 ] } ), v[ 0 ] === 'bookings' ? count : null ] );
 				b._count = count;
 				navButtons[ v[ 0 ] ] = b;
 				nav.appendChild( b );
@@ -619,7 +627,7 @@
 			root.appendChild( el( 'div', { 'class': 'sb-d-main' }, [ head, content ] ) );
 
 			var wanted = ( window.location.hash || '' ).replace( '#', '' );
-			show( TITLES[ wanted ] ? wanted : app.view );
+			show( app.paged ? app.view : ( TITLES[ wanted ] ? wanted : app.view ) );
 		} else {
 			root.classList.add( 'sb-d-bare' );
 			root.appendChild( head );

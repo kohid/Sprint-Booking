@@ -84,7 +84,7 @@ async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewpo
     const req = route.request(), url = new URL(req.url());
     const json = (b, s = 200) => route.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(b) });
     if (url.pathname === '/') {
-      const data = mode === 'shell' ? 'data-shell="aside" data-view="overview"' : mode === 'overview' ? 'data-shell="none" data-view="overview" data-bookings-url="http://dash.test/bookings/"' : 'data-shell="none" data-view="bookings" ' + attrs;
+      const data = mode === 'paged' ? 'data-shell="aside" data-view="bookings" data-overview-url="http://dash.test/overview/" data-bookings-url="http://dash.test/bookings/" data-full="site"' : mode === 'shell' ? 'data-shell="aside" data-view="overview"' : mode === 'overview' ? 'data-shell="none" data-view="overview" data-bookings-url="http://dash.test/bookings/"' : 'data-shell="none" data-view="bookings" ' + attrs;
       return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard harness</title><link rel="stylesheet" href="/dashboard.css"><style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#fff}</style></head><body><div class="sb-dash" data-sb-dash ${data}></div><script>window.SB_DASH=${JSON.stringify(CONFIG)}</script><script src="/dashboard.js"></script></body></html>` });
     }
     if (url.pathname === '/dashboard.css') return route.fulfill({ contentType: 'text/css', body: fs.readFileSync(ROOT + '/assets/css/dashboard.css') });
@@ -226,6 +226,16 @@ async function findRef(page, ref) {
   await m.page.click('.sb-d-nav__item >> text=Bookings'); await m.page.waitForSelector('.sb-d-table');
   assert((await m.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0, 'the table scrolls inside its card, not the page');
   await m.ctx.close();
+
+  // Separate pages, full width and height.
+  const pg = await setup(browser, { mode: 'paged' });
+  await pg.page.waitForSelector('.sb-d-table');
+  const box = await pg.page.evaluate(() => { const r = document.querySelector('.sb-dash').getBoundingClientRect(); return { w: r.width, h: r.height, vw: innerWidth, vh: innerHeight, scrollY: document.documentElement.scrollHeight - innerHeight }; });
+  assert(Math.abs(box.w - box.vw) <= 1 && Math.abs(box.h - box.vh) <= 1, 'dashboard fills the viewport: ' + JSON.stringify(box));
+  assert.strictEqual(await pg.page.locator('.sb-d-title').textContent(), 'Bookings', 'paged shell shows only its own view');
+  await pg.page.screenshot({ path: OUT + '/d6-paged-full.png' });
+  await Promise.all([pg.page.waitForURL('**/overview/'), pg.page.click('.sb-d-nav__item >> text=Overview')]);
+  await pg.ctx.close();
 
   assert.deepStrictEqual(log.errors, [], 'no JS errors: ' + log.errors.join(' | '));
   console.log('DASHBOARD E2E PASSED');

@@ -21,9 +21,13 @@ Requires WordPress 6.0+ and PHP 8.0+. This is v0.1 — see `docs/booking-form-sp
 |---|---|---|
 | `[sprint_booking_form]` | everyone | the booking form |
 | `[sprint_my_bookings]` | customers | their own bookings |
-| `[sprint_dashboard view="overview"]` | staff | whole dashboard with side menu |
+| `[sprint_dashboard view="bookings" overview_url="/dispatch/" bookings_url="/dispatch/bookings/"]` | staff | dashboard with side menu; with both URLs set, Overview and Bookings are separate pages |
 | `[sprint_dashboard_overview bookings_url="/bookings/"]` | staff | overview only |
 | `[sprint_dashboard_bookings status="needs_action" per_page="20"]` | staff | bookings list only |
+
+All dashboard shortcodes fill the browser's full width and height; add `fullscreen="no"` to keep one inside the page column.
+
+**Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
 
 The dashboard shortcodes show a sign-in form to visitors and a notice to accounts without access; the data itself is only served to staff by the REST API.
 

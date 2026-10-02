@@ -41,18 +41,46 @@ final class Dashboard {
 	// ── Shortcodes ────────────────────────────────────────────────
 
 	public static function shell( $atts ): string {
-		$a    = shortcode_atts( array( 'view' => 'overview' ), (array) $atts, self::SHELL_TAG );
+		$a    = shortcode_atts(
+			array(
+				'view'         => 'overview',
+				'overview_url' => '',
+				'bookings_url' => '',
+				'fullscreen'   => 'yes',
+			),
+			(array) $atts,
+			self::SHELL_TAG
+		);
 		$view = in_array( $a['view'], array( 'overview', 'bookings' ), true ) ? $a['view'] : 'overview';
-		return self::guarded( static fn() => self::mount( 'aside', $view, array() ) );
+		return self::guarded(
+			static fn() => self::mount(
+				'aside',
+				$view,
+				array(
+					'overview-url' => esc_url_raw( (string) $a['overview_url'] ),
+					'bookings-url' => esc_url_raw( (string) $a['bookings_url'] ),
+					'full'         => self::yes( $a['fullscreen'] ) ? 'site' : '',
+				)
+			)
+		);
 	}
 
 	public static function overview( $atts ): string {
-		$a = shortcode_atts( array( 'bookings_url' => '' ), (array) $atts, self::OVERVIEW_TAG );
-		return self::guarded( static fn() => self::mount( 'none', 'overview', array( 'bookings-url' => esc_url_raw( (string) $a['bookings_url'] ) ) ) );
+		$a = shortcode_atts( array( 'bookings_url' => '', 'fullscreen' => 'yes' ), (array) $atts, self::OVERVIEW_TAG );
+		return self::guarded(
+			static fn() => self::mount(
+				'none',
+				'overview',
+				array(
+					'bookings-url' => esc_url_raw( (string) $a['bookings_url'] ),
+					'full'         => self::yes( $a['fullscreen'] ) ? 'site' : '',
+				)
+			)
+		);
 	}
 
 	public static function bookings( $atts ): string {
-		$a = shortcode_atts( array( 'status' => '', 'per_page' => '25' ), (array) $atts, self::BOOKINGS_TAG );
+		$a = shortcode_atts( array( 'status' => '', 'per_page' => '25', 'fullscreen' => 'yes' ), (array) $atts, self::BOOKINGS_TAG );
 		return self::guarded(
 			static fn() => self::mount(
 				'none',
@@ -64,6 +92,10 @@ final class Dashboard {
 				)
 			)
 		);
+	}
+
+	private static function yes( $v ): bool {
+		return ! in_array( strtolower( trim( (string) $v ) ), array( 'no', 'false', '0', 'off' ), true );
 	}
 
 	// ── Pieces ────────────────────────────────────────────────────

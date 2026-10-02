@@ -19,6 +19,7 @@ final class Admin {
 	public static function init(): void {
 		add_action( 'admin_menu', array( self::class, 'menu' ) );
 		add_action( 'admin_init', array( self::class, 'register_settings' ) );
+		add_action( 'admin_post_sb_test_email', array( self::class, 'handle_test_email' ) );
 		add_action( 'admin_post_sb_create_page', array( self::class, 'handle_create_page' ) );
 		add_action( 'admin_enqueue_scripts', array( self::class, 'enqueue' ) );
 	}
@@ -62,25 +63,29 @@ final class Admin {
 	// ── Dashboard and Bookings ────────────────────────────────────
 
 	public static function page_dashboard(): void {
-		if ( ! Roles::can_manage() ) {
-			return;
-		}
-		self::header( __( 'Dashboard', 'sprint-booking' ), __( 'Today\'s pickups, what needs action and how the month is going.', 'sprint-booking' ) );
-		echo Dashboard::mount( 'none', 'overview', array( 'bookings-url' => admin_url( 'admin.php?page=sb-bookings' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- built and escaped in Dashboard::mount().
-		echo '</div>';
+		self::app_page( 'overview' );
 	}
 
 	public static function page_bookings(): void {
+		self::app_page( 'bookings' );
+	}
+
+	/** The dashboard app fills the whole admin screen, with the same side menu as the shortcode. */
+	private static function app_page( string $view ): void {
 		if ( ! Roles::can_manage() ) {
 			return;
 		}
-		self::header( __( 'Bookings', 'sprint-booking' ), __( 'Search, filter and open any booking to change its status.', 'sprint-booking' ) );
-		echo Dashboard::mount( 'none', 'bookings', array( 'per-page' => '25' ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- built and escaped in Dashboard::mount().
+		echo '<div class="sb-ui sb-ui--app">';
+		echo Dashboard::mount( // phpcs:ignore WordPress.Security.EscapeOutput -- built and escaped in Dashboard::mount().
+			'aside',
+			$view,
+			array(
+				'overview-url' => admin_url( 'admin.php?page=sb-dashboard' ),
+				'bookings-url' => admin_url( 'admin.php?page=sb-bookings' ),
+				'full'         => 'admin',
+			)
+		);
 		echo '</div>';
-	}
-
-	private static function header( string $title, string $sub ): void {
-		echo '<div class="sb-ui"><div class="sb-ui-head"><div><h1>' . esc_html( $title ) . '</h1><p>' . esc_html( $sub ) . '</p></div></div>';
 	}
 
 	// ── Create a page holding a shortcode ─────────────────────────
@@ -118,6 +123,24 @@ final class Admin {
 			exit;
 		}
 		wp_safe_redirect( add_query_arg( array( 'sb_page' => (int) $id ), admin_url( 'admin.php?page=sb-settings' ) ) );
+		exit;
+	}
+
+	// ── Test email ────────────────────────────────────────────────
+
+	public static function handle_test_email(): void {
+		if ( ! current_user_can( self::SETTINGS_CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'sprint-booking' ), 403 );
+		}
+		check_admin_referer( 'sb_test_email' );
+
+		$to = isset( $_POST['to'] ) ? sanitize_email( wp_unslash( $_POST['to'] ) ) : '';
+		if ( ! is_email( $to ) ) {
+			wp_safe_redirect( add_query_arg( 'sb_mail', 'invalid', admin_url( 'admin.php?page=sb-settings#email' ) ) );
+			exit;
+		}
+		$ok = Mailer::send( $to, __( 'Sprint Booking test email', 'sprint-booking' ), __( 'If you can read this, booking emails can leave your site. Check the log in Settings, Email, for any failures.', 'sprint-booking' ), array(), 'test' );
+		wp_safe_redirect( add_query_arg( 'sb_mail', $ok ? 'sent' : 'failed', admin_url( 'admin.php?page=sb-settings#email' ) ) );
 		exit;
 	}
 
@@ -178,6 +201,7 @@ final class Admin {
 			'rules'      => __( 'Booking rules', 'sprint-booking' ),
 			'cars'       => __( 'Cars', 'sprint-booking' ),
 			'services'   => __( 'Services', 'sprint-booking' ),
+			'email'      => __( 'Email', 'sprint-booking' ),
 			'shortcodes' => __( 'Shortcodes', 'sprint-booking' ),
 		);
 		echo '<div class="sb-ui-layout"><div class="sb-ui-tabs" role="tablist" aria-label="' . esc_attr__( 'Settings sections', 'sprint-booking' ) . '">';
@@ -254,6 +278,8 @@ final class Admin {
 		echo '</form>';
 
 		// Outside the settings form: each button here posts on its own.
+		self::email_panel( $panel_open, $panel_close );
+
 		$panel_open( 'shortcodes', __( 'Shortcodes', 'sprint-booking' ), __( 'Every page of the plugin is a shortcode. In Elementor, add a Shortcode widget and paste one in. Or create a draft page here and open it in Elementor.', 'sprint-booking' ) );
 		foreach ( Catalogue::all() as $sc ) {
 			self::shortcode_card( $sc );
@@ -261,6 +287,28 @@ final class Admin {
 		$panel_close();
 
 		echo '</div></div></div>';
+	}
+
+	private static function email_panel( callable $open, callable $close ): void {
+		$open( 'email', __( 'Email', 'sprint-booking' ), __( 'Booking emails go through WordPress, so your SMTP plugin (such as WP Mail SMTP with Brevo) delivers them. Send a test, then read the log below.', 'sprint-booking' ) );
+		$me = wp_get_current_user();
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row" style="grid-template-columns:240px minmax(0,1fr)">';
+		wp_nonce_field( 'sb_test_email' );
+		echo '<input type="hidden" name="action" value="sb_test_email"><label for="sb-test-to">' . esc_html__( 'Send a test email to', 'sprint-booking' ) . '</label><div><input id="sb-test-to" class="sb-ui-input" type="email" name="to" required value="' . esc_attr( $me->user_email ) . '"> <button class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Send test', 'sprint-booking' ) . '</button></div></form>';
+
+		$log = Mailer::log_entries();
+		if ( ! $log ) {
+			echo '<p class="sb-ui-help">' . esc_html__( 'No emails sent yet. Every booking email, and every failure, is listed here.', 'sprint-booking' ) . '</p>';
+		} else {
+			echo '<table class="sb-ui-table"><thead><tr><th>' . esc_html__( 'When', 'sprint-booking' ) . '</th><th>' . esc_html__( 'To', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Subject', 'sprint-booking' ) . '</th><th>' . esc_html__( 'Result', 'sprint-booking' ) . '</th></tr></thead><tbody>';
+			foreach ( $log as $e ) {
+				echo '<tr><td>' . esc_html( wp_date( 'D j M, H:i', (int) $e['time'] ) ) . '</td><td>' . esc_html( $e['to'] ) . '<br><small>' . esc_html( $e['kind'] ) . '</small></td><td>' . esc_html( $e['subject'] ) . '</td><td>'
+					. ( $e['ok'] ? '<span class="sb-d-badge sb-d-badge--success">' . esc_html__( 'Handed to mailer', 'sprint-booking' ) . '</span>' : '<span class="sb-d-badge sb-d-badge--warning">' . esc_html__( 'Failed', 'sprint-booking' ) . '</span><br><small>' . esc_html( $e['error'] ) . '</small>' )
+					. '</td></tr>';
+			}
+			echo '</tbody></table><p class="sb-ui-help">' . esc_html__( '"Handed to mailer" means WordPress passed it to your SMTP plugin. If it still does not arrive, check the sender address is verified in Brevo and look in Brevo\'s transactional logs.', 'sprint-booking' ) . '</p>';
+		}
+		$close();
 	}
 
 	/** @param array<string,mixed> $sc One entry of Catalogue::all(). */
@@ -289,6 +337,17 @@ final class Admin {
 
 	private static function notices(): void {
 		// phpcs:disable WordPress.Security.NonceVerification -- display only.
+		if ( isset( $_GET['sb_mail'] ) ) {
+			$r   = sanitize_key( wp_unslash( $_GET['sb_mail'] ) );
+			$map = array(
+				'sent'    => array( 'success', __( 'Test email handed to your mailer. Check the inbox, and the log in the Email tab.', 'sprint-booking' ) ),
+				'failed'  => array( 'error', __( 'The test email failed. The reason is in the Email tab log.', 'sprint-booking' ) ),
+				'invalid' => array( 'error', __( 'Enter a valid email address.', 'sprint-booking' ) ),
+			);
+			if ( isset( $map[ $r ] ) ) {
+				echo '<div class="notice notice-' . esc_attr( $map[ $r ][0] ) . ' is-dismissible"><p>' . esc_html( $map[ $r ][1] ) . '</p></div>';
+			}
+		}
 		if ( isset( $_GET['settings-updated'] ) && 'true' === $_GET['settings-updated'] ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Settings saved.', 'sprint-booking' ) . '</p></div>';
 		}

@@ -483,3 +483,27 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 	.sb-ui-row > .sb-ui-label { padding-top: 0; }
 	.sb-ui-sc dl div { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
+
+/* ═══ Full width, full height ═══ */
+.sb-d-full { width: 100%; max-width: none; min-height: 100vh; margin: 0; border-radius: 0; }
+.sb-d-shell.sb-d-full { height: 100vh; min-height: 0; border: 0; }
+.sb-d-shell.sb-d-full .sb-d-aside { height: 100vh; overflow-y: auto; }
+.sb-d-shell.sb-d-full .sb-d-main { height: 100vh; overflow-y: auto; }
+/* On the site: break out of the theme's content column. */
+.sb-d-full--site { width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); }
+/* In wp-admin: fill the screen under the admin bar and beside the menu. */
+.sb-ui--app { margin: 0 0 0 -20px; max-width: none; }
+.sb-d-full--admin { width: 100%; }
+.sb-d-shell.sb-d-full--admin,
+.sb-d-shell.sb-d-full--admin .sb-d-aside,
+.sb-d-shell.sb-d-full--admin .sb-d-main { height: calc(100vh - 32px); min-height: calc(100vh - 32px); }
+@media (max-width: 782px) {
+	.sb-d-shell.sb-d-full--admin,
+	.sb-d-shell.sb-d-full--admin .sb-d-aside,
+	.sb-d-shell.sb-d-full--admin .sb-d-main { height: calc(100vh - 46px); min-height: calc(100vh - 46px); }
+}
+@media (max-width: 900px) {
+	.sb-d-shell.sb-d-full { height: auto; min-height: 100vh; }
+	.sb-d-shell.sb-d-full .sb-d-aside,
+	.sb-d-shell.sb-d-full .sb-d-main { height: auto; }
+}

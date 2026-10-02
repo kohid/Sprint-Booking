@@ -55,16 +55,31 @@ final class Catalogue {
 				'tag'         => Dashboard::SHELL_TAG,
 				'title'       => __( 'Dashboard (all pages)', 'sprint-booking' ),
 				'audience'    => __( 'Staff', 'sprint-booking' ),
-				'description' => __( 'The whole dashboard in one place: a side menu with Overview and Bookings. Put it on one page and staff can move between views without leaving it.', 'sprint-booking' ),
+				'description' => __( 'The whole dashboard in one place: a side menu with Overview and Bookings. Put it on its own page. For one page per view, make a page for each and give each the address of the other.', 'sprint-booking' ),
 				'page_title'  => __( 'Dispatch dashboard', 'sprint-booking' ),
 				'attributes'  => array(
 					array(
 						'name'    => 'view',
 						'default' => 'overview',
-						'help'    => __( 'The page shown first: overview or bookings.', 'sprint-booking' ),
+						'help'    => __( 'The page this shortcode shows: overview or bookings.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'overview_url',
+						'default' => __( 'none', 'sprint-booking' ),
+						'help'    => __( 'Address of the page holding the overview. Set this and bookings_url and the side menu moves between separate pages.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'bookings_url',
+						'default' => __( 'none', 'sprint-booking' ),
+						'help'    => __( 'Address of the page holding the bookings list.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'fullscreen',
+						'default' => 'yes',
+						'help'    => __( 'yes fills the full browser width and height. Use no to keep it inside the page column.', 'sprint-booking' ),
 					),
 				),
-				'example'     => '[sprint_dashboard view="overview"]',
+				'example'     => '[sprint_dashboard view="bookings" overview_url="/dispatch/" bookings_url="/dispatch/bookings/"]',
 			),
 			array(
 				'tag'         => Dashboard::OVERVIEW_TAG,
@@ -77,6 +92,11 @@ final class Catalogue {
 						'name'    => 'bookings_url',
 						'default' => __( 'none', 'sprint-booking' ),
 						'help'    => __( 'Address of the page holding the bookings list. Adds "View all" links.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'fullscreen',
+						'default' => 'yes',
+						'help'    => __( 'yes fills the full browser width and height. Use no to keep it inside the page column.', 'sprint-booking' ),
 					),
 				),
 				'example'     => '[sprint_dashboard_overview bookings_url="/dispatch/bookings/"]',
@@ -97,6 +117,11 @@ final class Catalogue {
 						'name'    => 'per_page',
 						'default' => '25',
 						'help'    => __( 'Bookings per page, 1 to 100.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'fullscreen',
+						'default' => 'yes',
+						'help'    => __( 'yes fills the full browser width and height. Use no to keep it inside the page column.', 'sprint-booking' ),
 					),
 				),
 				'example'     => '[sprint_dashboard_bookings status="needs_action" per_page="20"]',
