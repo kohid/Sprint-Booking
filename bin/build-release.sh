@@ -29,9 +29,11 @@ mkdir -p dist
 rm -f dist/sprint-booking.zip
 git archive --format=zip --prefix=sprint-booking/ -o dist/sprint-booking.zip HEAD
 
-# The zip must carry everything the plugin needs at runtime.
-for must in sprint-booking/sprint-booking.php sprint-booking/assets/vendor/leaflet/leaflet.js sprint-booking/assets/js/booking-form.js sprint-booking/templates/booking-form.php; do
-	unzip -l dist/sprint-booking.zip | grep -q " $must\$" || { echo "Missing from zip: $must" >&2; exit 1; }
+# The zip must carry everything the plugin needs at runtime. List it once into a variable:
+# piping unzip straight into `grep -q` can fail under pipefail when grep closes the pipe early.
+listing=$(unzip -Z1 dist/sprint-booking.zip)
+for must in sprint-booking/sprint-booking.php sprint-booking/assets/vendor/leaflet/leaflet.js sprint-booking/assets/vendor/flatpickr/flatpickr.min.js sprint-booking/assets/js/booking-form.js sprint-booking/templates/booking-form.php; do
+	grep -qxF "$must" <<<"$listing" || { echo "Missing from zip: $must" >&2; exit 1; }
 done
 
 echo "Built dist/sprint-booking.zip (version $version, $(du -h dist/sprint-booking.zip | cut -f1))"
