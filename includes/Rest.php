@@ -208,6 +208,14 @@ final class Rest {
 			return $contact;
 		}
 
+		// A signed-in customer's confirmation goes to the email on their account, not to whatever the form carried.
+		if ( $user_id > 0 && in_array( $mode, array( 'login', 'account' ), true ) ) {
+			$account = get_userdata( $user_id );
+			if ( $account && is_email( $account->user_email ) ) {
+				$contact['email'] = $account->user_email;
+			}
+		}
+
 		// Price first: if anything above or here fails, no account has been created yet.
 		$q     = self::build_quote( $cfg, $stops, $opts );
 		$quote = $q['quote_only'];

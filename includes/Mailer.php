@@ -69,4 +69,21 @@ final class Mailer {
 			: "Thanks for booking. Your booking is received and we will confirm it shortly. Pay your driver at the end of the journey.\n\n";
 		wp_mail( $b['customer_email'], ( $quote ? 'We received your quote request ' : 'We received your booking ' ) . $b['reference'], $intro . $body );
 	}
+
+	/** Tell the customer when staff confirm, assign or cancel their booking. */
+	public static function status_changed( int $id, string $status ): void {
+		$messages = array(
+			'confirmed' => array( 'Booking confirmed', 'Good news: your booking is confirmed.' ),
+			'assigned'  => array( 'Driver assigned', 'A driver has been assigned to your booking.' ),
+			'cancelled' => array( 'Booking cancelled', 'Your booking has been cancelled. If this is unexpected, please contact us.' ),
+		);
+		$b = isset( $messages[ $status ] ) ? Bookings::find( $id ) : null;
+		if ( ! $b || ! is_email( $b['customer_email'] ) ) {
+			return;
+		}
+		$tz   = wp_timezone();
+		$when = ( new \DateTimeImmutable( $b['pickup_at'], new \DateTimeZone( 'UTC' ) ) )->setTimezone( $tz )->format( 'D j M Y, H:i' );
+		$body = $messages[ $status ][1] . "\n\nReference: " . $b['reference'] . "\nPickup at: " . $when;
+		wp_mail( $b['customer_email'], $messages[ $status ][0] . ' ' . $b['reference'], $body );
+	}
 }

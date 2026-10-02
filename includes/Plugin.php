@@ -17,6 +17,7 @@ final class Plugin {
 		Shortcode::init();
 		MyBookings::init();
 		Dashboard::init();
+		add_action( 'sb_booking_status_changed', array( Mailer::class, 'status_changed' ), 10, 2 );
 		Updater::init(); // Not admin-only: WordPress cron runs the update check too.
 
 		if ( is_admin() ) {
