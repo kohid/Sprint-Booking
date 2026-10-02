@@ -29,6 +29,15 @@ All dashboard shortcodes fill the browser's full width and height; add `fullscre
 
 **Dashboard pages:** Settings → Shortcodes → "Create the two dashboard pages" makes `/dashboard/` and `/dashboard/bookings/`, each holding `[sprint_dashboard]`; the side menu links between them. There are no `#overview` / `#bookings` views.
 
+**Phone agent (Settings → Phone agent) and Test chat.** Twilio answers a UK number and hands the call to an ElevenLabs agent; the agent books through this plugin. Twilio account details go into ElevenLabs, not into WordPress. In Settings you set the greeting the agent reads, the operator number, a blocked-numbers list and the agent ID, switch the agent on, and make the secret the agent must send. Only a hash of the secret is stored; it is shown once.
+
+| Endpoint (secret required) | Use |
+|---|---|
+| `GET /wp-json/sprint-booking/v1/voice/config?caller=…` | greeting, operator number, `blocked`, services, cars |
+| `POST /wp-json/sprint-booking/v1/voice/bookings` | create a booking; addresses may be plain text |
+
+Phone bookings use the same pricing, limits and emails as the website form, are marked "phone" in the booking and the office email, and reject blocked callers. **Taxi Bookings → Test chat** is a scripted stand-in for the agent (service, addresses, via stops, time, passengers, car, pets, contact details, fare, book) so the flow can be tried without a call. Not built yet: cancel/edit by phone, call log and daily call reports, and the AI conversation itself (that lives in ElevenLabs).
+
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
 
 The dashboard shortcodes show a sign-in form to visitors and a notice to accounts without access; the data itself is only served to staff by the REST API.
@@ -79,6 +88,7 @@ php tests/updater-test.php            # GitHub update decisions
 php tests/geocoder-test.php           # address suggestion parsing
 php tests/dashboard-test.php          # filters, overview numbers, row presentation
 php tests/catalogue-test.php          # Settings -> Shortcodes matches registered shortcodes
+php tests/voice-test.php              # phone numbers, blocked list, secret
 ```
 
 Browser tests of the form (`e2e.js`) and dashboard (`dashboard-e2e.js`) are in `tests/e2e/` (see its README).

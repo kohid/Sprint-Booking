@@ -42,6 +42,10 @@ final class Mailer {
 		$lines[] = 'Vehicle:   ' . ( $cfg['vehicles'][ $b['vehicle'] ]['label'] ?? $b['vehicle'] );
 		$lines[] = 'Fare:      ' . ( null === $b['price_pence'] ? 'To be quoted' : Settings::money( (int) $b['price_pence'] ) . ' (pay the driver)' );
 		$lines[] = '';
+		if ( ! empty( $b['source'] ) && 'web' !== $b['source'] ) {
+			$lines[] = 'Booked by: ' . ( 'phone' === $b['source'] ? 'phone agent' : 'test chat' );
+			$lines[] = '';
+		}
 		$lines[] = 'Name:  ' . trim( $b['customer_title'] . ' ' . $b['customer_name'] );
 		$lines[] = 'Phone: ' . $b['customer_phone'];
 		$lines[] = 'Email: ' . $b['customer_email'];

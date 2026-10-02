@@ -36,6 +36,13 @@ final class Settings {
 			'routing_base_url'        => 'https://router.project-osrm.org',
 			'geocoder_url'            => 'https://photon.komoot.io/api',
 			'allow_accounts'          => true,
+			'voice'                   => array(
+				'enabled'          => false,
+				'greeting'         => 'Thank you for calling Inverness Taxis. How can I help you today?',
+				'operator_number'  => '',
+				'blocked_numbers'  => '',
+				'agent_id'         => '',
+			),
 			'vehicles'                => array(
 				'saloon'    => array( 'label' => 'Saloon', 'capacity' => 4, 'bags' => 2, 'type' => 'saloon', 'image_id' => 0, 'multiplier' => 1.00, 'minibus' => false ),
 				'estate'    => array( 'label' => 'Estate', 'capacity' => 4, 'bags' => 3, 'type' => 'estate', 'image_id' => 0, 'multiplier' => 1.10, 'minibus' => false ),
@@ -93,6 +100,15 @@ final class Settings {
 		$geo                  = esc_url_raw( (string) ( $in['geocoder_url'] ?? $d['geocoder_url'] ), array( 'https' ) );
 		$out['geocoder_url']  = $geo ? untrailingslashit( $geo ) : $d['geocoder_url'];
 		$out['allow_accounts'] = ! empty( $in['allow_accounts'] );
+
+		$v      = (array) ( $in['voice'] ?? array() );
+		$out['voice'] = array(
+			'enabled'         => ! empty( $v['enabled'] ),
+			'greeting'        => mb_substr( sanitize_textarea_field( (string) ( $v['greeting'] ?? $d['voice']['greeting'] ) ), 0, 500 ),
+			'operator_number' => mb_substr( preg_replace( '/[^0-9+() \-]/', '', (string) ( $v['operator_number'] ?? '' ) ) ?? '', 0, 25 ),
+			'blocked_numbers' => mb_substr( sanitize_textarea_field( (string) ( $v['blocked_numbers'] ?? '' ) ), 0, 3000 ),
+			'agent_id'        => mb_substr( preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) ( $v['agent_id'] ?? '' ) ) ?? '', 0, 80 ),
+		);
 
 		foreach ( $d['vehicles'] as $key => $veh ) {
 			$m                                     = (float) ( $in['vehicles'][ $key ]['multiplier'] ?? $veh['multiplier'] );

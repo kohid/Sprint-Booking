@@ -144,15 +144,20 @@ final class Rest {
 		return rest_ensure_response( self::build_quote( $cfg, $stops, $opts ) );
 	}
 
-	public static function create_booking( \WP_REST_Request $req ) {
-		if ( ! RateLimit::allow( 'booking', 5, 10 * MINUTE_IN_SECONDS ) ) {
+	/**
+	 * @param bool   $trusted Internal callers (phone agent, staff chat) skip the form-bot checks; they are
+	 *                        authenticated already and share one IP, so a per-visitor limit would block them.
+	 * @param string $source  web, phone or chat.
+	 */
+	public static function create_booking( \WP_REST_Request $req, bool $trusted = false, string $source = 'web' ) {
+		if ( ! $trusted && ! RateLimit::allow( 'booking', 5, 10 * MINUTE_IN_SECONDS ) ) {
 			return self::too_many();
 		}
 		$cfg = Settings::get();
 		$in  = (array) $req->get_json_params();
 
 		// Honeypot and a minimum fill time: cheap checks that stop most form-bots.
-		if ( ! empty( $in['website'] ) || (int) ( $in['elapsed_ms'] ?? 0 ) < 3000 ) {
+		if ( ! $trusted && ( ! empty( $in['website'] ) || (int) ( $in['elapsed_ms'] ?? 0 ) < 3000 ) ) {
 			return new \WP_Error( 'sb_rejected', __( 'We could not accept this booking. Please call us.', 'sprint-booking' ), array( 'status' => 400 ) );
 		}
 
@@ -258,6 +263,7 @@ final class Rest {
 			'flight_no'         => 'airport' === $opts['service'] ? $contact['flight_no'] : '',
 			'company'           => 'corporate' === $opts['service'] ? $contact['company'] : '',
 			'notes'             => $contact['notes'],
+			'source'            => in_array( $source, array( 'web', 'phone', 'chat' ), true ) ? $source : 'web',
 			'created_at'        => gmdate( 'Y-m-d H:i:s' ),
 		);
 

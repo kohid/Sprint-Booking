@@ -75,6 +75,7 @@ final class Presenter {
 			'company'      => (string) ( $r['company'] ?? '' ),
 			'notes'        => (string) ( $r['notes'] ?? '' ),
 			'vulnerable'   => '' !== $vtype ? array( 'key' => $vtype, 'label' => (string) ( Rest::VULNERABLE_TYPES[ $vtype ] ?? $vtype ) ) : null,
+			'source'       => (string) ( $r['source'] ?? 'web' ),
 			'created'      => self::when( (string) ( $r['created_at'] ?? '' ), $tz, $now ),
 		);
 	}

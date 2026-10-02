@@ -26,6 +26,7 @@ php tests/updater-test.php >/dev/null
 php tests/geocoder-test.php >/dev/null
 php tests/dashboard-test.php >/dev/null
 php tests/catalogue-test.php >/dev/null
+php tests/voice-test.php >/dev/null
 
 mkdir -p dist
 rm -f dist/sprint-booking.zip

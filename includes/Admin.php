@@ -19,6 +19,7 @@ final class Admin {
 	public static function init(): void {
 		add_action( 'admin_menu', array( self::class, 'menu' ) );
 		add_action( 'admin_init', array( self::class, 'register_settings' ) );
+		add_action( 'admin_post_sb_voice_secret', array( self::class, 'handle_voice_secret' ) );
 		add_action( 'admin_post_sb_test_email', array( self::class, 'handle_test_email' ) );
 		add_action( 'admin_post_sb_create_dashboard', array( self::class, 'handle_create_dashboard' ) );
 		add_action( 'admin_post_sb_create_page', array( self::class, 'handle_create_page' ) );
@@ -30,6 +31,7 @@ final class Admin {
 		add_menu_page( __( 'Taxi Bookings', 'sprint-booking' ), __( 'Taxi Bookings', 'sprint-booking' ), $cap, 'sb-dashboard', array( self::class, 'page_dashboard' ), 'dashicons-car', 30 );
 		add_submenu_page( 'sb-dashboard', __( 'Dashboard', 'sprint-booking' ), __( 'Dashboard', 'sprint-booking' ), $cap, 'sb-dashboard', array( self::class, 'page_dashboard' ) );
 		add_submenu_page( 'sb-dashboard', __( 'Bookings', 'sprint-booking' ), __( 'Bookings', 'sprint-booking' ), $cap, 'sb-bookings', array( self::class, 'page_bookings' ) );
+		add_submenu_page( 'sb-dashboard', __( 'Test chat', 'sprint-booking' ), __( 'Test chat', 'sprint-booking' ), $cap, 'sb-chat', array( self::class, 'page_chat' ) );
 		add_submenu_page( 'sb-dashboard', __( 'Settings', 'sprint-booking' ), __( 'Settings', 'sprint-booking' ), self::SETTINGS_CAP, 'sb-settings', array( self::class, 'page_settings' ) );
 	}
 
@@ -43,6 +45,10 @@ final class Admin {
 		};
 		wp_enqueue_style( 'sb-dashboard', SB_URL . 'assets/css/dashboard.css', array(), $v( 'assets/css/dashboard.css' ) );
 
+		if ( false !== strpos( $hook, 'sb-chat' ) ) {
+			wp_enqueue_script( 'sb-chat', SB_URL . 'assets/js/chat.js', array(), $v( 'assets/js/chat.js' ), true );
+			wp_add_inline_script( 'sb-chat', 'window.SB_CHAT = ' . wp_json_encode( self::chat_config(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
+		}
 		if ( false !== strpos( $hook, 'sb-settings' ) ) {
 			wp_enqueue_media();
 			wp_enqueue_script( 'sb-admin-settings', SB_URL . 'assets/js/admin-settings.js', array( 'jquery' ), $v( 'assets/js/admin-settings.js' ), true );
@@ -165,6 +171,52 @@ final class Admin {
 		exit;
 	}
 
+	// ── Phone agent ───────────────────────────────────────────────
+
+	public static function handle_voice_secret(): void {
+		if ( ! current_user_can( self::SETTINGS_CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'sprint-booking' ), 403 );
+		}
+		check_admin_referer( 'sb_voice_secret' );
+		// Shown once, on the next screen, to this user only.
+		set_transient( 'sb_voice_secret_' . get_current_user_id(), Voice::new_secret(), 5 * MINUTE_IN_SECONDS );
+		wp_safe_redirect( admin_url( 'admin.php?page=sb-settings#voice' ) );
+		exit;
+	}
+
+	// ── Test chat ─────────────────────────────────────────────────
+
+	/** @return array<string,mixed> */
+	private static function chat_config(): array {
+		$cfg      = Settings::get();
+		$services = array();
+		foreach ( $cfg['services'] as $k => $s ) {
+			$services[ $k ] = array( 'label' => $s['label'], 'minibus_only' => ! empty( $s['minibus_only'] ) );
+		}
+		$vehicles = array();
+		foreach ( $cfg['vehicles'] as $k => $v ) {
+			$vehicles[ $k ] = array( 'label' => $v['label'], 'seats' => (int) $v['capacity'], 'bags' => (int) $v['bags'], 'minibus' => ! empty( $v['minibus'] ) );
+		}
+		return array(
+			'rest'     => esc_url_raw( rest_url( Rest::NS . '/' ) ),
+			'nonce'    => wp_create_nonce( 'wp_rest' ),
+			'symbol'   => (string) $cfg['currency_symbol'],
+			'greeting' => (string) $cfg['voice']['greeting'],
+			'services' => $services,
+			'vehicles' => $vehicles,
+			'earliest' => Rest::earliest_local( $cfg ),
+			'site'     => (string) get_bloginfo( 'name' ),
+		);
+	}
+
+	public static function page_chat(): void {
+		if ( ! Roles::can_manage() ) {
+			return;
+		}
+		echo '<div class="sb-ui"><div class="sb-ui-head"><div><h1>' . esc_html__( 'Test chat', 'sprint-booking' ) . '</h1><p>' . esc_html__( 'A scripted stand-in for the phone agent. It asks the same questions and books through the same checks, so you can try the flow without a phone call. Bookings made here are real and marked "test chat".', 'sprint-booking' ) . '</p></div></div>';
+		echo '<div class="sb-chat" data-sb-chat><noscript>' . esc_html__( 'The chat needs JavaScript.', 'sprint-booking' ) . '</noscript></div></div>';
+	}
+
 	// ── Test email ────────────────────────────────────────────────
 
 	public static function handle_test_email(): void {
@@ -240,6 +292,7 @@ final class Admin {
 			'rules'      => __( 'Booking rules', 'sprint-booking' ),
 			'cars'       => __( 'Cars', 'sprint-booking' ),
 			'services'   => __( 'Services', 'sprint-booking' ),
+			'voice'      => __( 'Phone agent', 'sprint-booking' ),
 			'email'      => __( 'Email', 'sprint-booking' ),
 			'shortcodes' => __( 'Shortcodes', 'sprint-booking' ),
 		);
@@ -313,10 +366,20 @@ final class Admin {
 		echo '</tbody></table>';
 		$panel_close();
 
+		$v = $c['voice'];
+		$panel_open( 'voice', __( 'Phone agent', 'sprint-booking' ), __( 'Settings for taking bookings by phone. Callers reach an ElevenLabs agent through a Twilio number; the agent books through this plugin.', 'sprint-booking' ) );
+		$row( 'sb-voice-on', __( 'Phone agent', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-voice-on" type="checkbox" name="' . esc_attr( $name ) . '[voice][enabled]" value="1"' . checked( ! empty( $v['enabled'] ), true, false ) . '> ' . esc_html__( 'Accept bookings from the phone agent', 'sprint-booking' ) . '</label>', __( 'While this is off, the agent endpoints refuse every request.', 'sprint-booking' ) );
+		$row( 'sb-voice-greeting', __( 'Greeting', 'sprint-booking' ), '<textarea id="sb-voice-greeting" class="sb-ui-input" rows="3" maxlength="500" name="' . esc_attr( $name ) . '[voice][greeting]">' . esc_textarea( $v['greeting'] ) . '</textarea>', __( 'What the agent says first. The agent fetches it at the start of each call, so a change here applies to the next call.', 'sprint-booking' ) );
+		$row( 'sb-voice-op', __( 'Operator number', 'sprint-booking' ), '<input id="sb-voice-op" class="sb-ui-input" type="tel" name="' . esc_attr( $name ) . '[voice][operator_number]" value="' . esc_attr( $v['operator_number'] ) . '">', __( 'Where the agent transfers callers it cannot help, or who prefer a person.', 'sprint-booking' ) );
+		$row( 'sb-voice-block', __( 'Blocked numbers', 'sprint-booking' ), '<textarea id="sb-voice-block" class="sb-ui-input" rows="5" name="' . esc_attr( $name ) . '[voice][blocked_numbers]">' . esc_textarea( $v['blocked_numbers'] ) . '</textarea>', __( 'One number per line. Add a note after #. +44 and 0 formats match each other. Blocked callers cannot book by phone.', 'sprint-booking' ) );
+		$row( 'sb-voice-agent', __( 'ElevenLabs agent ID', 'sprint-booking' ), '<input id="sb-voice-agent" class="sb-ui-input" type="text" name="' . esc_attr( $name ) . '[voice][agent_id]" value="' . esc_attr( $v['agent_id'] ) . '">', __( 'For your reference. The Twilio account details go into ElevenLabs, not here.', 'sprint-booking' ) );
+		$panel_close();
+
 		echo '<div class="sb-ui-savebar" data-sb-savebar><button type="submit" class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Save changes', 'sprint-booking' ) . '</button></div>';
 		echo '</form>';
 
 		// Outside the settings form: each button here posts on its own.
+		self::voice_connection_panel( $panel_open, $panel_close );
 		self::email_panel( $panel_open, $panel_close );
 
 		$panel_open( 'shortcodes', __( 'Shortcodes', 'sprint-booking' ), __( 'Every page of the plugin is a shortcode. In Elementor, add a Shortcode widget and paste one in. Or create a draft page here and open it in Elementor.', 'sprint-booking' ) );
@@ -327,6 +390,36 @@ final class Admin {
 		$panel_close();
 
 		echo '</div></div></div>';
+	}
+
+	private static function voice_connection_panel( callable $open, callable $close ): void {
+		$open( 'voice', __( 'Connect the agent', 'sprint-booking' ), __( 'Give these to the ElevenLabs agent as its tools. Requests must carry the secret.', 'sprint-booking' ) );
+
+		$key    = 'sb_voice_secret_' . get_current_user_id();
+		$secret = (string) get_transient( $key );
+		if ( '' !== $secret ) {
+			delete_transient( $key );
+			echo '<div class="sb-ui-secret" role="status"><strong>' . esc_html__( 'Your new secret. Copy it now; it is not shown again.', 'sprint-booking' ) . '</strong><div class="sb-ui-sc__code"><code>' . esc_html( $secret ) . '</code><button type="button" class="sb-d-btn sb-d-btn--primary" data-sb-copy="' . esc_attr( $secret ) . '">' . esc_html__( 'Copy', 'sprint-booking' ) . '</button></div></div>';
+		}
+
+		$have = '' !== (string) get_option( Voice::SECRET_OPTION, '' );
+		$rest = esc_url_raw( rest_url( Rest::NS . '/' ) );
+		echo '<dl class="sb-ui-endpoints">';
+		foreach ( array(
+			array( 'GET', 'voice/config?caller={caller number}', __( 'At the start of a call: greeting, operator number, whether the caller is blocked, and what can be booked.', 'sprint-booking' ) ),
+			array( 'POST', 'voice/bookings', __( 'When the agent has everything: creates the booking and sends the confirmation email.', 'sprint-booking' ) ),
+		) as $e ) {
+			echo '<div><dt><span class="sb-d-badge sb-d-badge--primary">' . esc_html( $e[0] ) . '</span></dt><dd><code>' . esc_html( $rest . $e[1] ) . '</code> <button type="button" class="button-link" data-sb-copy="' . esc_attr( $rest . $e[1] ) . '">' . esc_html__( 'Copy', 'sprint-booking' ) . '</button><br><span class="sb-ui-help">' . esc_html( $e[2] ) . '</span></dd></div>';
+		}
+		echo '<div><dt>' . esc_html__( 'Header', 'sprint-booking' ) . '</dt><dd><code>Authorization: Bearer &lt;secret&gt;</code><br><span class="sb-ui-help">' . esc_html__( 'or X-SB-Secret: <secret>', 'sprint-booking' ) . '</span></dd></div></dl>';
+
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row" style="grid-template-columns:240px minmax(0,1fr)">';
+		wp_nonce_field( 'sb_voice_secret' );
+		echo '<input type="hidden" name="action" value="sb_voice_secret"><span class="sb-ui-label">' . esc_html__( 'Secret', 'sprint-booking' ) . '</span><div>';
+		echo $have ? '<span class="sb-d-badge sb-d-badge--success">' . esc_html__( 'A secret is set', 'sprint-booking' ) . '</span> ' : '<span class="sb-d-badge sb-d-badge--warning">' . esc_html__( 'No secret yet', 'sprint-booking' ) . '</span> ';
+		echo '<button class="sb-d-btn sb-d-btn--light"' . ( $have ? ' onclick="return confirm(\'' . esc_js( __( 'Make a new secret? The agent stops working until you give it the new one.', 'sprint-booking' ) ) . '\')"' : '' ) . '>' . esc_html( $have ? __( 'Make a new secret', 'sprint-booking' ) : __( 'Make a secret', 'sprint-booking' ) ) . '</button>';
+		echo '<p class="sb-ui-help">' . esc_html__( 'Only a fingerprint of the secret is stored, so it cannot be shown again later.', 'sprint-booking' ) . '</p></div></form>';
+		$close();
 	}
 
 	private static function email_panel( callable $open, callable $close ): void {

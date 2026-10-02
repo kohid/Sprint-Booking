@@ -67,6 +67,7 @@ final class Activator {
 			flight_no VARCHAR(20) NOT NULL DEFAULT '',
 			company VARCHAR(100) NOT NULL DEFAULT '',
 			notes TEXT NULL,
+			source VARCHAR(10) NOT NULL DEFAULT 'web',
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY reference (reference),

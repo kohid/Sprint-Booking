@@ -14,6 +14,7 @@ final class Plugin {
 	public static function init(): void {
 		add_action( 'rest_api_init', array( Rest::class, 'register' ) );
 		add_action( 'rest_api_init', array( AdminRest::class, 'register' ) );
+		add_action( 'rest_api_init', array( Voice::class, 'register' ) );
 		Shortcode::init();
 		MyBookings::init();
 		Dashboard::init();
