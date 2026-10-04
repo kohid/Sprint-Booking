@@ -325,6 +325,8 @@
 					card( 'By status', 'All bookings', [ statusBreakdown( app, s.by_status ) ] )
 				] ) );
 
+				if ( s.calls ) { box.appendChild( callsCard( s.calls ) ); }
+
 				box.appendChild( el( 'div', { 'class': 'sb-d-grid2 sb-d-grid2--wide-left' }, [
 					card( 'Next pickups', 'Run sheet: soonest first', [ runSheet( app, s.next ) ], app.viewAll( 'pickup_asc' ) ),
 					card( 'Latest bookings', 'Most recently made', [ recentList( app, s.recent ) ], app.viewAll( 'newest' ) )
@@ -336,6 +338,24 @@
 		}
 		app.reload = load;
 		load();
+	}
+
+	var CALL_COLS = [ [ 'received', 'Taken' ], [ 'booked', 'Booked' ], [ 'cancelled', 'Cancelled' ], [ 'edited', 'Changed' ], [ 'transferred', 'To operator' ], [ 'bypass', 'Skipped assistant' ], [ 'blocked', 'Blocked' ] ];
+
+	// Daily report: calls and chats by outcome, today and the last 7 days.
+	function callsCard( calls ) {
+		var mini = el( 'div', { 'class': 'sb-d-mini' }, CALL_COLS.map( function ( c ) {
+			return el( 'div', { 'class': 'sb-d-mini__item' }, [ el( 'div', { 'class': 'sb-d-mini__value', text: String( calls.today[ c[ 0 ] ] ) } ), el( 'div', { 'class': 'sb-d-muted', text: c[ 1 ] } ) ] );
+		} ) );
+		var rows = calls.days.slice().reverse().map( function ( d ) {
+			var dt = new Date( d.day + 'T12:00:00' );
+			return el( 'tr', {}, [ el( 'td', { text: dt.toLocaleDateString( 'en-GB', { weekday: 'short', day: 'numeric', month: 'short' } ) } ) ].concat( CALL_COLS.map( function ( c ) { return el( 'td', { 'class': 'sb-d-num', text: String( d[ c[ 0 ] ] ) } ); } ) ) );
+		} );
+		var table = el( 'div', { 'class': 'sb-d-tablewrap' }, [ el( 'table', { 'class': 'sb-ui-table' }, [
+			el( 'thead', {}, [ el( 'tr', {}, [ el( 'th', { scope: 'col', text: 'Day' } ) ].concat( CALL_COLS.map( function ( c ) { return el( 'th', { scope: 'col', 'class': 'sb-d-num', text: c[ 1 ] } ); } ) ) ) ] ),
+			el( 'tbody', {}, rows )
+		] ) ] );
+		return card( 'Calls and chats today', 'Phone agent and website chat, by outcome', [ mini, table ] );
 	}
 
 	function kpi( iconName, tone, label, value, sub, onClick, chip ) {

@@ -36,5 +36,15 @@ t( 'features without coordinates are skipped', array() === Geocoder::parse( arra
 t( 'empty or junk input gives no suggestions', array() === Geocoder::parse( array() ) && array() === Geocoder::parse( array( 'features' => 'nope' ) ) );
 t( 'markup in names is stripped', false === strpos( Geocoder::parse( array( 'features' => array( feat( array( 'name' => '<b>Bold</b> Cafe', 'countrycode' => 'GB' ) ) ) ) )[0]['label'], '<' ) );
 
+$g = Geocoder::parse_google( array( 'results' => array(
+	array( 'formatted_address' => '10 Academy St, Inverness IV1 1LU, UK', 'geometry' => array( 'location' => array( 'lat' => 57.4789, 'lng' => -4.2245 ) ) ),
+	array( 'formatted_address' => '10 Academy St, Inverness IV1 1LU, UK', 'geometry' => array( 'location' => array( 'lat' => 57.4789, 'lng' => -4.2245 ) ) ),
+	array( 'formatted_address' => 'No coordinates' ),
+	array( 'formatted_address' => 'Castle St, Inverness, United Kingdom', 'geometry' => array( 'location' => array( 'lat' => '57.4786', 'lng' => '-4.2248' ) ) ),
+) ) );
+t( 'google: UK suffix removed, duplicates and bad rows dropped', 2 === count( $g ) && '10 Academy St, Inverness IV1 1LU' === $g[0]['label'] && 'Castle St, Inverness' === $g[1]['label'] );
+t( 'google: numeric strings become coordinates', 57.4786 === $g[1]['lat'] && -4.2248 === $g[1]['lng'] );
+t( 'google: junk gives no suggestions', array() === Geocoder::parse_google( array() ) && array() === Geocoder::parse_google( array( 'results' => 'x' ) ) );
+
 echo $fail ? "\n$fail failed\n" : "\nAll passed\n";
 exit( $fail ? 1 : 0 );

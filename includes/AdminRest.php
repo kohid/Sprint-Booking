@@ -70,6 +70,7 @@ final class AdminRest {
 		$present = static fn( array $r ): array => Presenter::row( $r, $cfg, $tz, $now );
 		$stats['next']   = array_map( $present, Bookings::next_pickups( 8 ) );
 		$stats['recent'] = array_map( $present, Bookings::recent( 6 ) );
+		$stats['calls']  = Calls::report( 7 );
 
 		return rest_ensure_response( $stats );
 	}

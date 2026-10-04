@@ -77,6 +77,20 @@ final class Activator {
 		) {$charset};"
 		);
 
+		$calls = Calls::table();
+		dbDelta(
+			"CREATE TABLE {$calls} (
+			id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			created_at DATETIME NOT NULL,
+			source VARCHAR(10) NOT NULL DEFAULT 'phone',
+			outcome VARCHAR(12) NOT NULL,
+			caller VARCHAR(8) NOT NULL DEFAULT '',
+			reference VARCHAR(24) NOT NULL DEFAULT '',
+			PRIMARY KEY  (id),
+			KEY created_at (created_at)
+		) {$charset};"
+		);
+
 		update_option( 'sb_db_version', SB_DB_VERSION, false );
 	}
 }

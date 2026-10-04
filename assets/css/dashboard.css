@@ -573,3 +573,44 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 @media (prefers-reduced-motion: reduce) { .sb-chat__typing span { animation: none; opacity: 0.6; } .sb-chat__log { scroll-behavior: auto; } }
 
 .sb-ui-checks { display: grid; gap: 0.5rem; }
+
+/* Chat menu: what the visitor wants to do */
+.sb-chat__menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; }
+.sb-chat__opt { display: grid; gap: 0.15rem; padding: 0.7rem 0.95rem; border: 1px solid var(--d-line2); border-radius: var(--d-radius); background: #fff; text-align: left; font: inherit; cursor: pointer; }
+.sb-chat__opt strong { color: var(--d-ink); }
+.sb-chat__opt span { color: var(--d-muted); font-size: 0.85rem; }
+.sb-chat__opt:hover { border-color: var(--d-red); background: var(--d-red-light); }
+.sb-chat__opt:hover strong { color: var(--d-red-dark); }
+.sb-chat__opt:focus-visible { outline: none; box-shadow: var(--d-ring); }
+.sb-chat__tray { max-height: 46vh; overflow-y: auto; }
+.sb-chat a.sb-d-btn { text-decoration: none; }
+/* On the site (not wp-admin) */
+.sb-chatpage { width: 100%; }
+.sb-chatpage .sb-chat { --chat-h: 640px; }
+.sb-chatpage .sb-chat__sheet { top: 1rem; }
+
+/* Phone agent setup: the route from "no phone line" to "calls become bookings" */
+.sb-ui-steps { margin: 0; padding: 0.25rem 0 0.5rem; list-style: none; counter-reset: sbstep; }
+.sb-ui-step { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 1rem; padding-bottom: 1.5rem; }
+.sb-ui-step::before { content: ""; position: absolute; left: 9px; top: 24px; bottom: 0; border-left: 3px dotted var(--d-red); opacity: 0.45; }
+.sb-ui-step:last-child::before { display: none; }
+.sb-ui-step:last-child { padding-bottom: 0.25rem; }
+.sb-ui-step__dot { width: 20px; height: 20px; margin-top: 2px; border-radius: 50%; border: 3px solid var(--d-line2); background: #fff; position: relative; z-index: 1; }
+.sb-ui-step.is-done .sb-ui-step__dot { border-color: var(--d-red); background: var(--d-red); }
+.sb-ui-step.is-done .sb-ui-step__dot::after { content: ""; position: absolute; left: 4px; top: 0; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.sb-ui-step h3 { margin: 0 0 0.35rem; padding: 0; font-size: 1rem; font-weight: 600; color: var(--d-ink); }
+.sb-ui-step p { margin: 0 0 0.5rem; color: var(--d-text); }
+.sb-ui-step__check { margin-top: 0.25rem; color: var(--d-muted); font-size: 0.9rem; }
+.sb-ui-links { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.sb-ui .sb-ui-link { color: var(--d-red-dark); font-weight: 600; text-decoration: none; }
+.sb-ui .sb-ui-link:hover { text-decoration: underline; }
+.sb-ui-urls { margin: 0 0 0.75rem; padding: 0; list-style: none; display: grid; gap: 0.6rem; }
+.sb-ui-urls li { display: block; }
+.sb-ui-urls .sb-ui-help { display: block; margin-top: 0.15rem; }
+.sb-ui-urls code { word-break: break-all; }
+.sb-ui-details summary { cursor: pointer; font-weight: 600; color: var(--d-red-dark); margin: 0.25rem 0 0.5rem; }
+.sb-ui-pre { margin: 0 0 0.6rem; padding: 0.9rem 1rem; border-radius: var(--d-radius); background: var(--d-page); color: var(--d-ink); white-space: pre-wrap; font-size: 0.88rem; line-height: 1.5; max-height: 18rem; overflow: auto; }
+
+.sb-d-mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.sb-d-mini__item { padding: 0.75rem 0.9rem; border-radius: var(--d-radius); background: var(--d-page); }
+.sb-d-mini__value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: var(--d-ink); }

@@ -78,3 +78,24 @@
 		done( ok );
 	} );
 }() );
+
+/**
+ * Settings, Phone agent: steps without an automatic check can be ticked off. Remembered in this browser only.
+ */
+( function () {
+	'use strict';
+	var boxes = document.querySelectorAll( '[data-sb-step-check]' );
+	if ( ! boxes.length ) { return; }
+	var KEY = 'sbVoiceSteps', done = {};
+	try { done = JSON.parse( window.localStorage.getItem( KEY ) || '{}' ) || {}; } catch ( e ) { done = {}; }
+	Array.prototype.forEach.call( boxes, function ( box ) {
+		var n = box.getAttribute( 'data-sb-step-check' ), li = box.closest( '.sb-ui-step' );
+		box.checked = !! done[ n ];
+		if ( li ) { li.classList.toggle( 'is-done', box.checked ); }
+		box.addEventListener( 'change', function () {
+			done[ n ] = box.checked;
+			if ( li ) { li.classList.toggle( 'is-done', box.checked ); }
+			try { window.localStorage.setItem( KEY, JSON.stringify( done ) ); } catch ( e ) { /* private mode: fine */ }
+		} );
+	} );
+}() );

@@ -46,8 +46,7 @@ final class Admin {
 		wp_enqueue_style( 'sb-dashboard', SB_URL . 'assets/css/dashboard.css', array(), $v( 'assets/css/dashboard.css' ) );
 
 		if ( false !== strpos( $hook, 'sb-chat' ) ) {
-			wp_enqueue_script( 'sb-chat', SB_URL . 'assets/js/chat.js', array(), $v( 'assets/js/chat.js' ), true );
-			wp_add_inline_script( 'sb-chat', 'window.SB_CHAT = ' . wp_json_encode( self::chat_config(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
+			ChatBooking::enqueue( 'staff' );
 		}
 		if ( false !== strpos( $hook, 'sb-settings' ) ) {
 			wp_enqueue_media();
@@ -186,29 +185,6 @@ final class Admin {
 
 	// ── Test chat ─────────────────────────────────────────────────
 
-	/** @return array<string,mixed> */
-	private static function chat_config(): array {
-		$cfg      = Settings::get();
-		$services = array();
-		foreach ( $cfg['services'] as $k => $s ) {
-			$services[ $k ] = array( 'label' => $s['label'], 'minibus_only' => ! empty( $s['minibus_only'] ) );
-		}
-		$vehicles = array();
-		foreach ( $cfg['vehicles'] as $k => $v ) {
-			$vehicles[ $k ] = array( 'label' => $v['label'], 'seats' => (int) $v['capacity'], 'bags' => (int) $v['bags'], 'minibus' => ! empty( $v['minibus'] ) );
-		}
-		return array(
-			'rest'     => esc_url_raw( rest_url( Rest::NS . '/' ) ),
-			'nonce'    => wp_create_nonce( 'wp_rest' ),
-			'symbol'   => (string) $cfg['currency_symbol'],
-			'greeting' => (string) $cfg['voice']['greeting'],
-			'services' => $services,
-			'vehicles' => $vehicles,
-			'earliest' => Rest::earliest_local( $cfg ),
-			'site'     => (string) get_bloginfo( 'name' ),
-		);
-	}
-
 	public static function page_chat(): void {
 		if ( ! Roles::can_manage() ) {
 			return;
@@ -302,6 +278,8 @@ final class Admin {
 		}
 		echo '</div><div>';
 
+		self::voice_setup_panel( $c, $panel_open, $panel_close );
+
 		echo '<form method="post" action="options.php" data-sb-form>';
 		settings_fields( 'sb_settings_group' );
 
@@ -330,6 +308,9 @@ final class Admin {
 			$boxes .= '<label class="sb-ui-check"><input type="checkbox" name="' . esc_attr( $name ) . '[dashboard_roles][]" value="' . esc_attr( $slug ) . '"' . checked( in_array( $slug, (array) $c['dashboard_roles'], true ), true, false ) . '> ' . esc_html( translate_user_role( $label ) ) . '</label>';
 		}
 		$row( 'sb-roles', __( 'Who can open the dashboard', 'sprint-booking' ), '<div class="sb-ui-checks"><label class="sb-ui-check"><input type="checkbox" checked disabled> ' . esc_html__( 'Administrator (always)', 'sprint-booking' ) . '</label>' . $boxes . '</div>', __( 'Pick the roles allowed to see the dashboard pages and change booking statuses. Everyone else, including customers, sees a "No access" notice. "Taxi dispatcher" is a role made for this.', 'sprint-booking' ) );
+		$gkey_set = '' !== (string) $c['google_api_key'];
+		$row( 'sb-gprov', __( 'Address lookup', 'sprint-booking' ), '<select id="sb-gprov" class="sb-ui-input" name="' . esc_attr( $name ) . '[geocoder_provider]"><option value="photon"' . selected( $c['geocoder_provider'], 'photon', false ) . '>' . esc_html__( 'Free public service (testing only)', 'sprint-booking' ) . '</option><option value="google"' . selected( $c['geocoder_provider'], 'google', false ) . '>' . esc_html__( 'Google Geocoding API', 'sprint-booking' ) . '</option></select>', __( 'Google gives better UK address and postcode matching. It needs the key below and is billed by Google.', 'sprint-booking' ) );
+		$row( 'sb-gkey', __( 'Google API key', 'sprint-booking' ), '<input id="sb-gkey" class="sb-ui-input" type="password" autocomplete="off" name="' . esc_attr( $name ) . '[google_api_key]" value="" placeholder="' . esc_attr( $gkey_set ? __( 'A key is saved. Type to replace it.', 'sprint-booking' ) : __( 'Paste your key', 'sprint-booking' ) ) . '">' . ( $gkey_set ? '<label class="sb-ui-check" style="margin-top:0.5rem"><input type="checkbox" name="' . esc_attr( $name ) . '[google_api_key_clear]" value="1"> ' . esc_html__( 'Remove the saved key', 'sprint-booking' ) . '</label>' : '' ), __( 'Create it at console.cloud.google.com, Credentials, and turn on the Geocoding API. Restrict the key to the Geocoding API. The key is stored in this site\'s database and never shown on the site.', 'sprint-booking' ) );
 		$row( 'sb-accounts', __( 'Customer accounts', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-accounts" type="checkbox" name="' . esc_attr( $name ) . '[allow_accounts]" value="1"' . checked( ! empty( $c['allow_accounts'] ), true, false ) . '> ' . esc_html__( 'Let customers register and sign in on the booking form', 'sprint-booking' ) . '</label>' );
 		$panel_close();
 
@@ -380,6 +361,7 @@ final class Admin {
 		$row( 'sb-voice-greeting', __( 'Greeting', 'sprint-booking' ), '<textarea id="sb-voice-greeting" class="sb-ui-input" rows="3" maxlength="500" name="' . esc_attr( $name ) . '[voice][greeting]">' . esc_textarea( $v['greeting'] ) . '</textarea>', __( 'What the agent says first. The agent fetches it at the start of each call, so a change here applies to the next call.', 'sprint-booking' ) );
 		$row( 'sb-voice-op', __( 'Operator number', 'sprint-booking' ), '<input id="sb-voice-op" class="sb-ui-input" type="tel" name="' . esc_attr( $name ) . '[voice][operator_number]" value="' . esc_attr( $v['operator_number'] ) . '">', __( 'Where the agent transfers callers it cannot help, or who prefer a person.', 'sprint-booking' ) );
 		$row( 'sb-voice-block', __( 'Blocked numbers', 'sprint-booking' ), '<textarea id="sb-voice-block" class="sb-ui-input" rows="5" name="' . esc_attr( $name ) . '[voice][blocked_numbers]">' . esc_textarea( $v['blocked_numbers'] ) . '</textarea>', __( 'One number per line. Add a note after #. +44 and 0 formats match each other. Blocked callers cannot book by phone.', 'sprint-booking' ) );
+		$row( 'sb-voice-form', __( 'Booking form page', 'sprint-booking' ), '<input id="sb-voice-form" class="sb-ui-input" type="url" name="' . esc_attr( $name ) . '[voice][form_url]" value="' . esc_attr( $v['form_url'] ) . '" placeholder="https://">', __( 'Offered to people who prefer not to use the chat assistant.', 'sprint-booking' ) );
 		$row( 'sb-voice-agent', __( 'ElevenLabs agent ID', 'sprint-booking' ), '<input id="sb-voice-agent" class="sb-ui-input" type="text" name="' . esc_attr( $name ) . '[voice][agent_id]" value="' . esc_attr( $v['agent_id'] ) . '">', __( 'For your reference. The Twilio account details go into ElevenLabs, not here.', 'sprint-booking' ) );
 		$panel_close();
 
@@ -400,6 +382,96 @@ final class Admin {
 		echo '</div></div></div>';
 	}
 
+	/** Numbered route from "no phone line" to "calls become bookings". Done steps are filled in. */
+	private static function voice_setup_panel( array $c, callable $open, callable $close ): void {
+		$v      = $c['voice'];
+		$rest   = esc_url_raw( rest_url( Rest::NS . '/' ) );
+		$secret = '' !== (string) get_option( Voice::SECRET_OPTION, '' );
+		$link   = static fn( string $url, string $label ): string => '<a class="sb-ui-link" href="' . esc_url( $url ) . '" target="_blank" rel="noopener noreferrer">' . esc_html( $label ) . ' <span aria-hidden="true">↗</span></a>';
+
+		$vehicles = implode( ', ', array_map( static fn( $x ) => $x['label'] . ' (' . (int) $x['capacity'] . ' seats)', $c['vehicles'] ) );
+		$services = implode( ', ', array_map( static fn( $x ) => $x['label'], $c['services'] ) );
+		$prompt   = "You are the booking assistant for " . get_bloginfo( 'name' ) . ", a taxi firm in Inverness, Scotland. Be brief and friendly.\n\n"
+			. "1. At the start of every call, call the config tool with the caller's number. If blocked is true, say you cannot take bookings on this number and end the call. Otherwise say the greeting it returns.\n"
+			. "2. Offer: a taxi as soon as possible, a taxi for later, cancel a booking, change a booking time, or speak to a person.\n"
+			. "3. To book, collect: service (" . $services . "), pickup, drop-off and any stops on the way, date and time (earliest is earliest_pickup from config; for \"now\" use that time), number of passengers, number of suitcases, car (" . $vehicles . "), whether a pet is travelling, name, mobile number, and email address. Ask the caller to spell the email and read it back. Read the whole booking back and wait for a yes before calling the booking tool.\n"
+			. "4. Never make up a price. Say the fare from the booking tool's reply, and that it is paid to the driver. If the tool returns an error, read its message to the caller and fix the answer.\n"
+			. "5. To cancel or change a booking, ask for the booking reference and the email it was made with, then call the manage tool.\n"
+			. "6. If the caller asks for a person, prefers not to use the assistant, or you cannot understand them after two tries, call the events tool with outcome transferred (or bypass if they just do not want the assistant), then transfer the call to " . ( '' !== $v['operator_number'] ? $v['operator_number'] : '[set the operator number in the plugin settings]' ) . ".";
+
+		$steps = array(
+			array(
+				'done'  => $secret,
+				'title' => __( 'Make the secret', 'sprint-booking' ),
+				'body'  => '<p>' . esc_html__( 'This is the password the phone agent sends to your site. Make it in "Connect the agent" below, and copy it straight away.', 'sprint-booking' ) . '</p>',
+			),
+			array(
+				'title' => __( 'Twilio: get a UK phone number', 'sprint-booking' ),
+				'body'  => '<p>' . esc_html__( 'Create a Twilio account and buy a UK number. UK numbers usually need a regulatory bundle (business details and an address) approved first, so start that early.', 'sprint-booking' ) . '</p><p class="sb-ui-links">'
+					. $link( 'https://console.twilio.com/', __( 'Twilio Console', 'sprint-booking' ) )
+					. $link( 'https://console.twilio.com/us1/develop/phone-numbers/manage/search', __( 'Buy a number', 'sprint-booking' ) )
+					. $link( 'https://console.twilio.com/us1/develop/phone-numbers/regulatory-compliance/bundles', __( 'Regulatory bundles', 'sprint-booking' ) )
+					. '</p><p class="sb-ui-help">' . esc_html__( 'Your Account SID and Auth Token are on the Console home page, under Account Info. You will paste them into ElevenLabs in step 4, not into WordPress.', 'sprint-booking' ) . '</p>',
+			),
+			array(
+				'title' => __( 'ElevenLabs: create the agent', 'sprint-booking' ),
+				'body'  => '<p>' . esc_html__( 'Create a voice agent. Paste the instructions from step 5 as its prompt. Copy its Agent ID into the field further down.', 'sprint-booking' ) . '</p><p class="sb-ui-links">'
+					. $link( 'https://elevenlabs.io/app/agents', __( 'ElevenLabs agents', 'sprint-booking' ) )
+					. $link( 'https://elevenlabs.io/app/settings/api-keys', __( 'ElevenLabs API keys', 'sprint-booking' ) )
+					. $link( 'https://elevenlabs.io/docs', __( 'ElevenLabs docs', 'sprint-booking' ) )
+					. '</p><p class="sb-ui-help">' . esc_html__( 'An ElevenLabs API key is only needed if you script their service yourself. This plugin does not use one, so do not paste it here.', 'sprint-booking' ) . '</p>',
+				'done'  => '' !== $v['agent_id'],
+			),
+			array(
+				'title' => __( 'Connect the Twilio number to the agent', 'sprint-booking' ),
+				'body'  => '<p>' . esc_html__( 'In ElevenLabs, add your Twilio number to the agent: it asks for the number, the Account SID and the Auth Token, then you choose which agent answers it. Menu names change from time to time, so follow ElevenLabs\' current guide for Twilio phone numbers.', 'sprint-booking' ) . '</p><p class="sb-ui-links">'
+					. $link( 'https://elevenlabs.io/docs', __( 'ElevenLabs docs: phone numbers', 'sprint-booking' ) )
+					. $link( 'https://www.twilio.com/docs/phone-numbers', __( 'Twilio docs: phone numbers', 'sprint-booking' ) )
+					. '</p>',
+			),
+			array(
+				'title' => __( 'Give the agent its tools', 'sprint-booking' ),
+				'body'  => '<p>' . esc_html__( 'In the agent, add four tools that call these web addresses. Each sends the header Authorization: Bearer plus your secret. Use JSON for the body.', 'sprint-booking' ) . '</p><ul class="sb-ui-urls">'
+					. implode( '', array_map( static fn( $r ) => '<li><strong>' . esc_html( $r[0] ) . '</strong> <code>' . esc_html( $rest . $r[2] ) . '</code> <button type="button" class="button-link" data-sb-copy="' . esc_attr( $rest . $r[2] ) . '">' . esc_html__( 'Copy', 'sprint-booking' ) . '</button><span class="sb-ui-help">' . esc_html( $r[3] ) . '</span></li>', array(
+						array( 'GET', '', 'voice/config?caller={caller number}', __( 'Call this first on every call.', 'sprint-booking' ) ),
+						array( 'POST', '', 'voice/bookings', __( 'Create a booking.', 'sprint-booking' ) ),
+						array( 'POST', '', 'voice/manage', __( 'Cancel or change a booking: action, reference, email, pickup_at.', 'sprint-booking' ) ),
+						array( 'POST', '', 'voice/events', __( 'Report outcome: transferred or bypass.', 'sprint-booking' ) ),
+					) ) )
+					. '</ul><details class="sb-ui-details"><summary>' . esc_html__( 'Starting instructions for the agent', 'sprint-booking' ) . '</summary><pre class="sb-ui-pre">' . esc_html( $prompt ) . '</pre><button type="button" class="sb-d-btn sb-d-btn--light" data-sb-copy="' . esc_attr( $prompt ) . '">' . esc_html__( 'Copy instructions', 'sprint-booking' ) . '</button></details>',
+			),
+			array(
+				'done'  => ! empty( $v['enabled'] ) && $secret,
+				'title' => __( 'Switch it on and test', 'sprint-booking' ),
+				'body'  => '<p>' . esc_html__( 'Tick "Accept bookings from the phone agent" below and save. Try the whole flow without a phone call in the', 'sprint-booking' ) . ' <a class="sb-ui-link" href="' . esc_url( admin_url( 'admin.php?page=sb-chat' ) ) . '">' . esc_html__( 'Test chat', 'sprint-booking' ) . '</a>' . esc_html__( ', then ring the number.', 'sprint-booking' ) . '</p>',
+			),
+			array(
+				'done'  => 'google' === $c['geocoder_provider'] && '' !== (string) $c['google_api_key'],
+				'title' => __( 'Optional: Google for addresses', 'sprint-booking' ),
+				'body'  => '<p>' . esc_html__( 'Use Google to look up addresses and postcodes. Create an API key, turn on the Geocoding API, then choose Google under Booking rules, Address lookup.', 'sprint-booking' ) . '</p><p class="sb-ui-links">'
+					. $link( 'https://console.cloud.google.com/apis/credentials', __( 'Google Cloud: credentials', 'sprint-booking' ) )
+					. $link( 'https://console.cloud.google.com/apis/library/geocoding-backend.googleapis.com', __( 'Turn on the Geocoding API', 'sprint-booking' ) )
+					. '</p>',
+			),
+		);
+
+		$open( 'voice', __( 'Set up phone bookings', 'sprint-booking' ), __( 'Six steps from no phone line to calls that become bookings. Ticked steps are done; the others you tick yourself.', 'sprint-booking' ) );
+		echo '<ol class="sb-ui-steps">';
+		foreach ( $steps as $i => $st ) {
+			$auto = array_key_exists( 'done', $st );
+			printf(
+				'<li class="sb-ui-step%1$s" data-sb-step="%2$d"><span class="sb-ui-step__dot" aria-hidden="true"></span><div class="sb-ui-step__main"><h3>%3$s</h3>%4$s%5$s</div></li>',
+				$auto && $st['done'] ? ' is-done' : '',
+				(int) $i,
+				esc_html( $st['title'] ),
+				$st['body'], // phpcs:ignore WordPress.Security.EscapeOutput -- built from escaped parts above.
+				$auto ? '' : '<label class="sb-ui-check sb-ui-step__check"><input type="checkbox" data-sb-step-check="' . (int) $i . '"> ' . esc_html__( 'I have done this', 'sprint-booking' ) . '</label>'
+			);
+		}
+		echo '</ol>';
+		$close();
+	}
+
 	private static function voice_connection_panel( callable $open, callable $close ): void {
 		$open( 'voice', __( 'Connect the agent', 'sprint-booking' ), __( 'Give these to the ElevenLabs agent as its tools. Requests must carry the secret.', 'sprint-booking' ) );
 
@@ -416,6 +488,8 @@ final class Admin {
 		foreach ( array(
 			array( 'GET', 'voice/config?caller={caller number}', __( 'At the start of a call: greeting, operator number, whether the caller is blocked, and what can be booked.', 'sprint-booking' ) ),
 			array( 'POST', 'voice/bookings', __( 'When the agent has everything: creates the booking and sends the confirmation email.', 'sprint-booking' ) ),
+			array( 'POST', 'voice/manage', __( 'Cancel or change a booking, given its reference and the email it was made with.', 'sprint-booking' ) ),
+			array( 'POST', 'voice/events', __( 'Report that a call was passed to an operator (transferred) or the caller skipped the assistant (bypass).', 'sprint-booking' ) ),
 		) as $e ) {
 			echo '<div><dt><span class="sb-d-badge sb-d-badge--primary">' . esc_html( $e[0] ) . '</span></dt><dd><code>' . esc_html( $rest . $e[1] ) . '</code> <button type="button" class="button-link" data-sb-copy="' . esc_attr( $rest . $e[1] ) . '">' . esc_html__( 'Copy', 'sprint-booking' ) . '</button><br><span class="sb-ui-help">' . esc_html( $e[2] ) . '</span></dd></div>';
 		}

@@ -263,7 +263,7 @@ final class Rest {
 			'flight_no'         => 'airport' === $opts['service'] ? $contact['flight_no'] : '',
 			'company'           => 'corporate' === $opts['service'] ? $contact['company'] : '',
 			'notes'             => $contact['notes'],
-			'source'            => in_array( $source, array( 'web', 'phone', 'chat' ), true ) ? $source : 'web',
+			'source'            => in_array( $source, array( 'web', 'phone', 'chat', 'web_chat' ), true ) ? $source : 'web',
 			'created_at'        => gmdate( 'Y-m-d H:i:s' ),
 		);
 
@@ -511,7 +511,7 @@ final class Rest {
 	}
 
 	/** 'YYYY-MM-DDTHH:MM' entered in the site's timezone -> UTC DateTimeImmutable, or null. */
-	private static function parse_local_time( string $s ): ?\DateTimeImmutable {
+	public static function parse_local_time( string $s ): ?\DateTimeImmutable {
 		$dt = \DateTimeImmutable::createFromFormat( 'Y-m-d\TH:i', $s, wp_timezone() );
 		if ( ! $dt || \DateTimeImmutable::getLastErrors() && ( \DateTimeImmutable::getLastErrors()['warning_count'] || \DateTimeImmutable::getLastErrors()['error_count'] ) ) {
 			return null;

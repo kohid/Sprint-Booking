@@ -14,6 +14,8 @@ require __DIR__ . '/../includes/Stats.php';
 require __DIR__ . '/../includes/Presenter.php';
 require __DIR__ . '/../includes/Dashboard.php';
 require __DIR__ . '/../includes/Roles.php';
+require __DIR__ . '/../includes/ManageRules.php';
+require __DIR__ . '/../includes/CallReport.php';
 
 use SprintBooking\BookingQuery;
 use SprintBooking\Presenter;
@@ -147,6 +149,38 @@ t( 'customers can never be given access', array() === Roles::clean( array( 'sb_c
 t( 'administrator is implicit, not stored', array() === Roles::clean( array( 'administrator' ), $known ) );
 t( 'repeats and junk values are dropped', array( 'editor' ) === Roles::clean( array( 'editor', 'EDITOR', 5, array(), 'editor' ), $known ) );
 t( 'a non-list gives an empty list', array() === Roles::clean( null, $known ) && array() === Roles::clean( 'editor', array( 'x' ) ) );
+
+// ── Customer cancel / change rules ──
+use SprintBooking\ManageRules as M;
+use SprintBooking\CallReport;
+$now = 1000000; $day = 86400;
+t( 'email match ignores case and spaces', M::emails_match( ' Test@Example.com ', 'test@example.com' ) );
+t( 'empty emails never match', ! M::emails_match( '', '' ) );
+t( 'a different email does not match', ! M::emails_match( 'a@example.com', 'b@example.com' ) );
+t( 'future new booking can be cancelled', '' === M::cancel_block( 'new', $now + $day, $now ) );
+t( 'assigned booking can still be cancelled', '' === M::cancel_block( 'assigned', $now + $day, $now ) );
+t( 'completed and cancelled ones cannot', 'closed' === M::cancel_block( 'completed', $now + $day, $now ) && 'closed' === M::cancel_block( 'cancelled', $now + $day, $now ) );
+t( 'a pickup in the past cannot be cancelled', 'past' === M::cancel_block( 'confirmed', $now - 1, $now ) );
+t( 'change to a later time is allowed', '' === M::edit_block( 'confirmed', $now + $day, $now, $now + 2 * $day, 60 ) );
+t( 'change needs the usual notice', 'too_soon' === M::edit_block( 'new', $now + $day, $now, $now + 600, 60 ) );
+t( 'assigned bookings need a phone call to change', 'assigned' === M::edit_block( 'assigned', $now + $day, $now, $now + 2 * $day, 60 ) );
+t( 'a year ahead is the limit', 'too_far' === M::edit_block( 'new', $now + $day, $now, $now + 400 * $day, 60 ) );
+t( 'closed bookings cannot be changed', 'closed' === M::edit_block( 'cancelled', $now + $day, $now, $now + 2 * $day, 60 ) );
+
+// ── Daily call report ──
+$days = CallReport::last_days( '2026-10-04', 3 );
+t( 'last days run oldest first', array( '2026-10-02', '2026-10-03', '2026-10-04' ) === $days );
+$rep = CallReport::build( array(
+	array( 'day' => '2026-10-04', 'outcome' => 'received', 'n' => '7' ),
+	array( 'day' => '2026-10-04', 'outcome' => 'booked', 'n' => 4 ),
+	array( 'day' => '2026-10-04', 'outcome' => 'transferred', 'n' => 2 ),
+	array( 'day' => '2026-10-03', 'outcome' => 'received', 'n' => 5 ),
+	array( 'day' => '2026-09-01', 'outcome' => 'received', 'n' => 99 ),
+	array( 'day' => '2026-10-04', 'outcome' => 'nonsense', 'n' => 99 ),
+), $days );
+t( 'today comes from the last day', 7 === $rep['today']['received'] && 2 === $rep['today']['transferred'] && 0 === $rep['today']['bypass'] );
+t( 'totals add the days shown, ignoring older days and unknown outcomes', 12 === $rep['total']['received'] && 4 === $rep['total']['booked'] );
+t( 'every day is listed even with no calls', 3 === count( $rep['days'] ) && 0 === $rep['days'][0]['received'] );
 
 echo $fail ? "\n$fail failed\n" : "\nAll passed\n";
 exit( $fail ? 1 : 0 );

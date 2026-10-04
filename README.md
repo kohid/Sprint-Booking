@@ -20,6 +20,7 @@ Requires WordPress 6.0+ and PHP 8.0+. This is v0.1 — see `docs/booking-form-sp
 | Shortcode | For | Shows |
 |---|---|---|
 | `[sprint_booking_form]` | everyone | the booking form |
+| `[sprint_chat_booking form_url="/book/"]` | everyone | the booking assistant as a chat: taxi as soon as possible, taxi for later, cancel, change, talk to a person, book without the assistant |
 | `[sprint_my_bookings]` | customers | their own bookings |
 | `[sprint_dashboard view="bookings" overview_url="/dispatch/" bookings_url="/dispatch/bookings/"]` | staff | dashboard with side menu; Overview and Bookings are always separate pages; the menu finds them automatically (or set the URLs) |
 | `[sprint_dashboard_overview bookings_url="/bookings/"]` | staff | overview only |
@@ -36,7 +37,13 @@ All dashboard shortcodes fill the browser's full width and height; add `fullscre
 | `GET /wp-json/sprint-booking/v1/voice/config?caller=…` | greeting, operator number, `blocked`, services, cars |
 | `POST /wp-json/sprint-booking/v1/voice/bookings` | create a booking; addresses may be plain text |
 
-Phone bookings use the same pricing, limits and emails as the website form, are marked "phone" in the booking and the office email, and reject blocked callers. **Taxi Bookings → Test chat** is a scripted stand-in for the agent (service, addresses, via stops, time, passengers, car, pets, contact details, fare, book) so the flow can be tried without a call. Not built yet: cancel/edit by phone, call log and daily call reports, and the AI conversation itself (that lives in ElevenLabs).
+Phone bookings use the same pricing, limits and emails as the website form, are marked "phone" in the booking and the office email, and reject blocked callers. **Taxi Bookings → Test chat** is a scripted stand-in for the agent (service, addresses, via stops, time, passengers, car, pets, contact details, fare, book) so the flow can be tried without a call. Also available to the agent: `POST /voice/manage` (cancel or change a booking given its reference and the email it was made with) and `POST /voice/events` (report `transferred` to the operator or `bypass`). Settings → Phone agent opens with a six-step setup guide (Twilio number, ElevenLabs agent, connecting them, the four tools, switching on, optional Google), with links to the places where the IDs and keys live and a copyable set of starting instructions for the agent. The Twilio Account SID and Auth Token and any ElevenLabs API key are entered in those services, not in WordPress.
+
+**Daily report:** the dashboard Overview has a "Calls and chats today" card (taken, booked, cancelled, changed, passed to an operator, skipped the assistant, blocked; last 7 days). Only outcomes and the last four digits of a caller's number are stored, and rows older than 90 days are deleted.
+
+**Google:** Settings → Booking rules → Address lookup can use the Google Geocoding API (UK addresses and postcodes) with your key; the key is never sent to visitors.
+
+Not built yet: the AI conversation itself (that lives in ElevenLabs), a customer-facing "my bookings" inside the chat, and changing addresses on an existing booking (cancel and rebook instead).
 
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
 
@@ -89,9 +96,10 @@ php tests/geocoder-test.php           # address suggestion parsing
 php tests/dashboard-test.php          # filters, overview numbers, row presentation
 php tests/catalogue-test.php          # Settings -> Shortcodes matches registered shortcodes
 php tests/voice-test.php              # phone numbers, blocked list, secret
+# dashboard-test.php also covers cancel/change rules and the daily report
 ```
 
-Browser tests of the form (`e2e.js`) and dashboard (`dashboard-e2e.js`) are in `tests/e2e/` (see its README).
+Browser tests of the form (`e2e.js`), dashboard (`dashboard-e2e.js`) and chat (`chat-e2e.js`) are in `tests/e2e/` (see its README).
 
 ## Structure
 

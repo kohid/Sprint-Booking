@@ -42,6 +42,24 @@ final class Voice {
 		);
 		register_rest_route(
 			Rest::NS,
+			'/voice/manage',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( self::class, 'phone_manage' ),
+				'permission_callback' => array( self::class, 'authorise' ),
+			)
+		);
+		register_rest_route(
+			Rest::NS,
+			'/voice/events',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( self::class, 'phone_event' ),
+				'permission_callback' => array( self::class, 'authorise' ),
+			)
+		);
+		register_rest_route(
+			Rest::NS,
 			'/admin/chat/book',
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
@@ -82,6 +100,13 @@ final class Voice {
 		$cfg    = Settings::get();
 		$caller = (string) $req->get_param( 'caller' );
 
+		// One config fetch is one call taken.
+		$blocked = VoiceRules::is_blocked( $cfg['voice']['blocked_numbers'], $caller );
+		Calls::log( 'received', 'phone', '', $caller );
+		if ( $blocked ) {
+			Calls::log( 'blocked', 'phone', '', $caller );
+		}
+
 		$services = array();
 		foreach ( $cfg['services'] as $k => $s ) {
 			$services[ $k ] = array( 'label' => $s['label'], 'quote_only' => ! empty( $s['quote_only'] ) );
@@ -94,7 +119,7 @@ final class Voice {
 			array(
 				'greeting'         => $cfg['voice']['greeting'],
 				'operator_number'  => $cfg['voice']['operator_number'],
-				'blocked'          => VoiceRules::is_blocked( $cfg['voice']['blocked_numbers'], $caller ),
+				'blocked'          => $blocked,
 				'services'         => $services,
 				'vehicles'         => $vehicles,
 				'min_lead_minutes' => (int) $cfg['min_lead_minutes'],
@@ -111,6 +136,25 @@ final class Voice {
 			return new \WP_Error( 'sb_blocked', __( 'This number cannot book by phone.', 'sprint-booking' ), array( 'status' => 403 ) );
 		}
 		return self::create( $in, 'phone' );
+	}
+
+	public static function phone_manage( \WP_REST_Request $req ) {
+		if ( ! RateLimit::allow( 'voice_manage', 60, 10 * MINUTE_IN_SECONDS ) ) {
+			return new \WP_Error( 'sb_rate_limited', __( 'Too many requests.', 'sprint-booking' ), array( 'status' => 429 ) );
+		}
+		$res = Manage::run( (array) $req->get_json_params(), 'phone' );
+		return is_wp_error( $res ) ? $res : rest_ensure_response( $res );
+	}
+
+	/** The agent reports what happened on a call: transferred to the operator, or the caller chose not to use it. */
+	public static function phone_event( \WP_REST_Request $req ) {
+		$in      = (array) $req->get_json_params();
+		$outcome = (string) ( $in['outcome'] ?? '' );
+		if ( ! in_array( $outcome, array( 'transferred', 'bypass' ), true ) ) {
+			return new \WP_Error( 'sb_invalid', __( 'Unknown outcome.', 'sprint-booking' ), array( 'status' => 400 ) );
+		}
+		Calls::log( $outcome, 'phone', '', (string) ( $in['caller_number'] ?? '' ) );
+		return rest_ensure_response( array( 'ok' => true ) );
 	}
 
 	public static function chat_booking( \WP_REST_Request $req ) {
@@ -173,6 +217,7 @@ final class Voice {
 			return $res;
 		}
 		$data = (array) $res->get_data();
+		Calls::log( 'booked', $source, (string) $data['reference'], (string) ( $in['caller_number'] ?? '' ) );
 		$data['message'] = null === $data['total_pence']
 			? sprintf( /* translators: %s: booking reference */ __( 'Quote request %s received. We will price it and email the customer.', 'sprint-booking' ), $data['reference'] )
 			: sprintf( /* translators: 1: reference, 2: fare */ __( 'Booking %1$s received. The fare is %2$s, paid to the driver. A confirmation email is on its way.', 'sprint-booking' ), $data['reference'], Settings::money( (int) $data['total_pence'] ) );

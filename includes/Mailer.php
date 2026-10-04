@@ -43,7 +43,7 @@ final class Mailer {
 		$lines[] = 'Fare:      ' . ( null === $b['price_pence'] ? 'To be quoted' : Settings::money( (int) $b['price_pence'] ) . ' (pay the driver)' );
 		$lines[] = '';
 		if ( ! empty( $b['source'] ) && 'web' !== $b['source'] ) {
-			$lines[] = 'Booked by: ' . ( 'phone' === $b['source'] ? 'phone agent' : 'test chat' );
+			$lines[] = 'Booked by: ' . ( array( 'phone' => 'phone agent', 'web_chat' => 'website chat', 'chat' => 'test chat' )[ $b['source'] ] ?? $b['source'] );
 			$lines[] = '';
 		}
 		$lines[] = 'Name:  ' . trim( $b['customer_title'] . ' ' . $b['customer_name'] );
@@ -139,5 +139,12 @@ final class Mailer {
 	public static function log_entries(): array {
 		$log = get_option( self::LOG_OPTION, array() );
 		return is_array( $log ) ? $log : array();
+	}
+
+	/** A short note to the office when a customer changes a booking themselves. */
+	public static function office_alert( string $subject, string $body ): void {
+		$cfg    = Settings::get();
+		$office = $cfg['notify_email'] ?: get_option( 'admin_email' );
+		self::send( (string) $office, $subject, $body, array(), 'office' );
 	}
 }

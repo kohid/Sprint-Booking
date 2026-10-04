@@ -36,6 +36,8 @@ final class Settings {
 			'routing_base_url'        => 'https://router.project-osrm.org',
 			'geocoder_url'            => 'https://photon.komoot.io/api',
 			'allow_accounts'          => true,
+			'geocoder_provider'       => 'photon',
+			'google_api_key'          => '',
 			'dashboard_roles'         => array( 'sb_dispatcher' ),
 			'voice'                   => array(
 				'enabled'          => false,
@@ -43,6 +45,7 @@ final class Settings {
 				'operator_number'  => '',
 				'blocked_numbers'  => '',
 				'agent_id'         => '',
+				'form_url'         => '',
 			),
 			'vehicles'                => array(
 				'saloon'    => array( 'label' => 'Saloon', 'capacity' => 4, 'bags' => 2, 'type' => 'saloon', 'image_id' => 0, 'multiplier' => 1.00, 'minibus' => false ),
@@ -105,6 +108,11 @@ final class Settings {
 		$out['geocoder_url']  = $geo ? untrailingslashit( $geo ) : $d['geocoder_url'];
 		$out['allow_accounts'] = ! empty( $in['allow_accounts'] );
 
+		$out['geocoder_provider'] = 'google' === ( $in['geocoder_provider'] ?? '' ) ? 'google' : 'photon';
+		$stored_key               = (string) ( ( get_option( self::OPTION, array() ) ?: array() )['google_api_key'] ?? '' );
+		$new_key                  = mb_substr( preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) ( $in['google_api_key'] ?? '' ) ) ?? '', 0, 80 );
+		// A blank box keeps the saved key; the tick box removes it.
+		$out['google_api_key']    = ! empty( $in['google_api_key_clear'] ) ? '' : ( '' !== $new_key ? $new_key : $stored_key );
 		$out['dashboard_roles'] = Roles::clean( $in['dashboard_roles'] ?? array(), array_keys( wp_roles()->get_names() ) );
 		$v      = (array) ( $in['voice'] ?? array() );
 		$out['voice'] = array(
@@ -112,6 +120,7 @@ final class Settings {
 			'greeting'        => mb_substr( sanitize_textarea_field( (string) ( $v['greeting'] ?? $d['voice']['greeting'] ) ), 0, 500 ),
 			'operator_number' => mb_substr( preg_replace( '/[^0-9+() \-]/', '', (string) ( $v['operator_number'] ?? '' ) ) ?? '', 0, 25 ),
 			'blocked_numbers' => mb_substr( sanitize_textarea_field( (string) ( $v['blocked_numbers'] ?? '' ) ), 0, 3000 ),
+			'form_url'        => esc_url_raw( (string) ( $v['form_url'] ?? '' ), array( 'http', 'https' ) ),
 			'agent_id'        => mb_substr( preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) ( $v['agent_id'] ?? '' ) ) ?? '', 0, 80 ),
 		);
 

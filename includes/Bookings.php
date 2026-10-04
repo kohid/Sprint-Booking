@@ -140,4 +140,17 @@ final class Bookings {
 		}
 		return false !== $wpdb->update( Activator::table(), array( 'status' => $status ), array( 'id' => $id ), array( '%s' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 	}
+
+	public static function find_by_reference( string $reference ): ?array {
+		global $wpdb;
+		$table = Activator::table();
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE reference = %s", strtoupper( trim( $reference ) ) ), ARRAY_A ); // phpcs:ignore WordPress.DB
+		return is_array( $row ) ? $row : null;
+	}
+
+	/** @param string $utc 'Y-m-d H:i:s' in UTC. */
+	public static function update_pickup( int $id, string $utc ): bool {
+		global $wpdb;
+		return false !== $wpdb->update( Activator::table(), array( 'pickup_at' => $utc ), array( 'id' => $id ), array( '%s' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
 }

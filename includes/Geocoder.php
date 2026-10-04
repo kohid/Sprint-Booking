@@ -36,13 +36,19 @@ final class Geocoder {
 			return new \WP_Error( 'sb_query', __( 'Type at least 3 characters.', 'sprint-booking' ), array( 'status' => 400 ) );
 		}
 
-		$key    = 'sb_geo_' . md5( mb_strtolower( $query ) );
+		$cfg    = Settings::get();
+		$google = 'google' === $cfg['geocoder_provider'] && '' !== $cfg['google_api_key'];
+		$key    = 'sb_geo_' . ( $google ? 'g_' : '' ) . md5( mb_strtolower( $query ) );
 		$cached = get_transient( $key );
 		if ( is_array( $cached ) ) {
 			return $cached;
 		}
 
-		$base = Settings::get()['geocoder_url'];
+		if ( $google ) {
+			return self::search_google( $query, $cfg['google_api_key'], $key );
+		}
+
+		$base = $cfg['geocoder_url'];
 		$url  = add_query_arg(
 			array(
 				'q'     => $query,
@@ -73,6 +79,63 @@ final class Geocoder {
 
 		$out = self::parse( $body );
 		set_transient( $key, $out, 7 * DAY_IN_SECONDS );
+		return $out;
+	}
+
+	/**
+	 * Google Geocoding API, UK only. The key is sent only to Google and never appears in an error shown to visitors.
+	 *
+	 * @return array<int,array{label:string,lat:float,lng:float}>|\WP_Error
+	 */
+	private static function search_google( string $query, string $api_key, string $cache_key ) {
+		$url = add_query_arg(
+			array(
+				'address'    => $query,
+				'components' => 'country:GB',
+				'region'     => 'gb',
+				'bounds'     => '57.2,-4.6|57.7,-3.8', // A hint around Inverness, not a limit.
+				'key'        => $api_key,
+			),
+			'https://maps.googleapis.com/maps/api/geocode/json'
+		);
+		$res = wp_remote_get( $url, array( 'timeout' => 6, 'user-agent' => 'SprintBooking/' . SB_VERSION . ' (' . home_url() . ')' ) );
+		$err = new \WP_Error( 'sb_geocoder', __( 'Address suggestions are unavailable right now. Try again in a moment.', 'sprint-booking' ), array( 'status' => 502 ) );
+		if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+			return $err;
+		}
+		$body = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+		if ( ! is_array( $body ) || ! in_array( $body['status'] ?? '', array( 'OK', 'ZERO_RESULTS' ), true ) ) {
+			return $err; // e.g. REQUEST_DENIED when the key is wrong or the API is not enabled.
+		}
+		$out = self::parse_google( $body );
+		set_transient( $cache_key, $out, 7 * DAY_IN_SECONDS );
+		return $out;
+	}
+
+	/**
+	 * Google Geocoding JSON -> labelled points (UK only, no duplicates, at most 7).
+	 *
+	 * @return array<int,array{label:string,lat:float,lng:float}>
+	 */
+	public static function parse_google( array $json ): array {
+		$out  = array();
+		$seen = array();
+		foreach ( (array) ( $json['results'] ?? array() ) as $r ) {
+			$loc   = $r['geometry']['location'] ?? null;
+			$label = trim( (string) ( $r['formatted_address'] ?? '' ) );
+			if ( ! is_array( $loc ) || ! isset( $loc['lat'], $loc['lng'] ) || ! is_numeric( $loc['lat'] ) || ! is_numeric( $loc['lng'] ) || '' === $label ) {
+				continue;
+			}
+			$label = trim( (string) preg_replace( '/,\s*(UK|United Kingdom)$/i', '', $label ) );
+			if ( isset( $seen[ $label ] ) ) {
+				continue;
+			}
+			$seen[ $label ] = true;
+			$out[]          = array( 'label' => mb_substr( $label, 0, 200 ), 'lat' => round( (float) $loc['lat'], 6 ), 'lng' => round( (float) $loc['lng'], 6 ) );
+			if ( count( $out ) >= 7 ) {
+				break;
+			}
+		}
 		return $out;
 	}
 

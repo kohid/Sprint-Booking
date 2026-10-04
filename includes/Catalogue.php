@@ -43,6 +43,21 @@ final class Catalogue {
 				'example'     => '[sprint_booking_form services="airport,minibus" service="airport"]',
 			),
 			array(
+				'tag'         => ChatBooking::TAG,
+				'title'       => __( 'Chat booking', 'sprint-booking' ),
+				'audience'    => __( 'Everyone', 'sprint-booking' ),
+				'description' => __( 'The booking assistant as a chat. Buttons for: a taxi as soon as possible, a taxi for later, cancel a booking, change a booking, talk to a person, and booking without the assistant. A live "Booking so far" panel shows the answers and the fare.', 'sprint-booking' ),
+				'page_title'  => __( 'Chat to book', 'sprint-booking' ),
+				'attributes'  => array(
+					array(
+						'name'    => 'form_url',
+						'default' => __( 'the address set under Phone agent', 'sprint-booking' ),
+						'help'    => __( 'Page with the booking form, offered when someone prefers not to use the assistant.', 'sprint-booking' ),
+					),
+				),
+				'example'     => '[sprint_chat_booking form_url="/book/"]',
+			),
+			array(
 				'tag'         => MyBookings::TAG,
 				'title'       => __( 'My bookings', 'sprint-booking' ),
 				'audience'    => __( 'Signed-in customers', 'sprint-booking' ),

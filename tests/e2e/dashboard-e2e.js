@@ -70,7 +70,7 @@ function stats() {
   const series = []; for (let i = 13; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000); series.push({ date: wall(d).slice(0, 10), label: `${DAYS[d.getDay()]} ${d.getDate()}`, count: [2, 0, 3, 5, 1, 4, 2, 6, 3, 0, 4, 7, 5, 3][13 - i] }); }
   const upcoming = rows.filter(r => ['new', 'confirmed', 'assigned'].includes(r.status) && r.pickup.iso >= wall(new Date())).sort((a, b) => a.pickup.iso.localeCompare(b.pickup.iso)).slice(0, 8);
   return { today: rows.filter(r => r.pickup.day === 'Today' && r.status !== 'cancelled').length, tomorrow: rows.filter(r => r.pickup.day === 'Tomorrow').length, needs_action: (by.new || 0) + (by.quote_requested || 0), quotes: by.quote_requested || 0,
-    month_bookings: 41, month_change: 28, month_revenue: 184250, revenue_change: -6, by_status: by, series, next: upcoming, recent: rows.slice().sort((a, b) => a.created.iso < b.created.iso ? 1 : -1).slice(0, 6) };
+    month_bookings: 41, month_change: 28, month_revenue: 184250, revenue_change: -6, by_status: by, series, calls: { today: { received: 7, booked: 4, cancelled: 1, edited: 0, transferred: 2, bypass: 1, blocked: 0 }, total: {}, days: [13, 12, 11, 10, 9, 8, 7].map((n, i) => ({ day: wall(new Date(Date.now() - (6 - i) * 86400000)).slice(0, 10), received: n, booked: n - 3, cancelled: 0, edited: 0, transferred: i % 3, bypass: 0, blocked: 0 })) }, next: upcoming, recent: rows.slice().sort((a, b) => a.created.iso < b.created.iso ? 1 : -1).slice(0, 6) };
 }
 
 async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewport = { width: 1280, height: 900 } } = {}) {
@@ -133,6 +133,12 @@ async function findRef(page, ref) {
   assert.strictEqual(aside, 'rgb(30, 30, 45)', 'aside uses the Metronic demo1 colour #1E1E2D');
   await page.screenshot({ path: OUT + '/d1-overview.png', fullPage: true });
 
+  // ── Daily call report ──
+  const callsTxt = await page.textContent('text=Calls and chats today >> xpath=ancestor::*[contains(@class,"sb-d-card")]');
+  assert(callsTxt.includes('Passed') === false && callsTxt.includes('To operator') && callsTxt.includes('Skipped assistant'), 'report columns: ' + callsTxt.slice(0, 120));
+  assert.strictEqual((await page.locator('.sb-d-mini__value').allTextContents()).join(','), '7,4,1,0,2,1,0', 'today numbers');
+  assert.strictEqual(await page.locator('.sb-d-mini ~ .sb-d-tablewrap tbody tr').count(), 7, 'seven days listed');
+
   // ── Needs action tile jumps to the filtered list ──
   await page.click('.sb-d-kpi--link');
   await page.waitForSelector('.sb-d-table');
@@ -146,7 +152,7 @@ async function findRef(page, ref) {
   await page.selectOption('select[aria-label=Status]', '');
   await page.waitForFunction(() => document.querySelectorAll('.sb-d-table tbody tr').length === 25);
   assert(/Showing 1–25 of 34/.test(await page.textContent('.sb-d-pager')), 'paging summary');
-  await page.click('.sb-d-page >> text=2'); await page.waitForFunction(() => /Showing 26–34 of 34/.test(document.querySelector('.sb-d-pager').textContent));
+  await page.click('.sb-d-page >> text=2'); await page.waitForFunction(() => /Showing 26–34 of 34/.test(((document.querySelector('.sb-d-pager') || {}).textContent || '')));
   await page.fill('input[type=search]', 'fraser'); await page.waitForFunction(() => /of 4\b|of 3\b|of 5\b/.test(document.querySelector('.sb-d-pager')?.textContent || ''));
   const names = await page.locator('.sb-d-table tbody tr td:nth-child(3) .sb-d-strong').allTextContents();
   assert(names.length > 0 && names.every(n => /Fraser/.test(n)), 'search finds by customer name: ' + names);
