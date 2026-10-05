@@ -14,6 +14,7 @@ const BASE = {
   vehicles: { saloon: { label: 'Saloon', seats: 4, bags: 2, minibus: false }, mpv: { label: 'MPV', seats: 6, bags: 4, minibus: false }, minibus8: { label: 'Minibus (8 seats)', seats: 8, bags: 8, minibus: true } },
   earliest: '2030-01-01T10:00',
 };
+const PAY = { driver: true, stripe: true, paypal: true };
 const PUBLIC = { ...BASE, mode: 'public', nonce: '', paths: { book: 'chat/book', manage: 'chat/manage', event: 'chat/event', report: '' } };
 const STAFF = { ...BASE, mode: 'staff', nonce: 'n0nce', paths: { book: 'admin/chat/book', manage: 'admin/chat/manage', event: 'admin/chat/event', report: 'admin/calls?days=7' } };
 
@@ -39,7 +40,9 @@ async function open(browser, CONFIG, errors) {
     if (ep.endsWith('chat/book')) {
       seen.book = req.postDataJSON();
       if (seen.failFirstBook) { seen.failFirstBook = false; return json({ code: 'sb_too_soon', message: 'We need at least 60 minutes notice.' }, 400); }
-      return json({ reference: 'SB-TEST22', status: 'new', total_pence: 4500, message: 'Booking SB-TEST22 received. The fare is £45.00, paid to the driver.' });
+      const online = ['stripe', 'paypal'].includes(seen.book.payment);
+      const links = CONFIG.payments && CONFIG.payments.stripe ? { stripe: 'http://pay.test/stripe-link', paypal: 'http://pay.test/paypal-link' } : {};
+      return json({ reference: 'SB-TEST22', status: 'new', total_pence: 4500, payment: seen.book.payment || 'driver', pay_links: links, redirect: online ? links[seen.book.payment] : '', message: online ? 'Booking SB-TEST22 received. The fare is £45.00. Use the secure link to pay now.' : 'Booking SB-TEST22 received. The fare is £45.00, paid to the driver.' });
     }
     if (ep.endsWith('chat/manage')) {
       const b = req.postDataJSON(); seen.manage.push(b);
@@ -139,6 +142,51 @@ async function open(browser, CONFIG, errors) {
   await page.setViewportSize({ width: 390, height: 800 });
   assert((await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0, 'no horizontal scroll on mobile');
   await page.screenshot({ path: OUT + '/c3-chat-mobile.png', fullPage: true });
+  await page.context().close();
+
+  // ── Paying in the chat ──
+  ({ page, seen, chip, type } = await open(browser, { ...PUBLIC, payments: PAY }, errors));
+  await chip('Book a taxi for later').waitFor();
+  seen.failFirstBook = false;
+  await chip('Book a taxi for later').click();
+  await chip('Airport Transfer').click(); await chip('To the airport').click();
+  await type('Castle'); await chip('Castle Road, Inverness').click();
+  await chip('No, straight there').click();
+  await type('Airport'); await chip('Airport Road, Inverness').click();
+  await page.waitForSelector('input[type=datetime-local]'); await page.keyboard.press('Enter');
+  await chip('2').click(); await chip('1').waitFor(); await chip('1').click();
+  await chip('Saloon').waitFor(); await chip('Saloon').click(); await chip('No').click();
+  await type('Test Person'); await type('07700 900123'); await type('test@example.com');
+  await chip('Book it').waitFor(); await chip('Book it').click();
+  await page.waitForSelector('text=How would you like to pay £45.00?');
+  assert.deepStrictEqual(await page.locator('.sb-chat__chip').allTextContents(), ['Pay the driver', 'Pay now by card', 'Pay now with PayPal'], 'the payment choices');
+  await chip('Pay now by card').click();
+  assert(/Card, paid online/.test(await page.textContent('.sb-chat__sheet')), 'the sheet shows how it will be paid');
+  await page.waitForSelector('a:has-text("Pay by card")');
+  assert.strictEqual(seen.book.payment, 'stripe', 'the chat sends the chosen method'); assert(/^http:\/\/chat\.test\/$/.test(seen.book.return_to), 'and where to come back to: ' + seen.book.return_to);
+  assert.strictEqual(await page.getAttribute('a:has-text("Pay by card")', 'href'), 'http://pay.test/stripe-link');
+  assert.strictEqual(await page.getAttribute('a:has-text("Pay by card")', 'target'), '_blank', 'the payment page opens in a new tab so the chat stays');
+  assert((await page.textContent('.sb-chat__log')).includes('Tap to pay now'));
+  await page.screenshot({ path: OUT + '/c4-chat-pay.png' });
+  await chip('Back to the menu').click(); await page.waitForSelector('.sb-chat__opt');
+  await page.context().close();
+
+  // Choosing the driver still offers the link afterwards; no gateway on means no question at all.
+  ({ page, seen, chip, type } = await open(browser, { ...PUBLIC, payments: PAY }, errors));
+  seen.failFirstBook = false;
+  await chip('Book a taxi for later').click();
+  await chip('Airport Transfer').click(); await chip('To the airport').click();
+  await type('Castle'); await chip('Castle Road, Inverness').click(); await chip('No, straight there').click();
+  await type('Airport'); await chip('Airport Road, Inverness').click();
+  await page.waitForSelector('input[type=datetime-local]'); await page.keyboard.press('Enter');
+  await chip('2').click(); await chip('1').waitFor(); await chip('1').click();
+  await chip('Saloon').waitFor(); await chip('Saloon').click(); await chip('No').click();
+  await type('Test Person'); await type('07700 900123'); await type('test@example.com');
+  await chip('Book it').waitFor(); await chip('Book it').click();
+  await chip('Pay the driver').waitFor(); await chip('Pay the driver').click();
+  await page.waitForSelector('text=If you would rather pay now');
+  assert.strictEqual(seen.book.payment, 'driver');
+  assert(await page.locator('a:has-text("Pay with PayPal")').count() === 1, 'pay-now links are still offered');
   await page.context().close();
 
   // ── Staff test chat ──

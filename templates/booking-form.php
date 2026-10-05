@@ -21,6 +21,25 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 		<p class="sb-noscript"><?php esc_html_e( 'Online booking needs JavaScript. Turn it on, or call us to book.', 'sprint-booking' ); ?></p>
 	</noscript>
 
+	<?php
+	// Where the customer lands after paying (or not) on Stripe or PayPal. Display only; nothing here changes a booking.
+	// phpcs:disable WordPress.Security.NonceVerification
+	$pay_result = isset( $_GET['sb_pay'] ) ? sanitize_key( wp_unslash( $_GET['sb_pay'] ) ) : '';
+	$pay_ref    = isset( $_GET['sb_ref'] ) ? preg_replace( '/[^A-Z0-9\-]/', '', strtoupper( sanitize_text_field( wp_unslash( $_GET['sb_ref'] ) ) ) ) : '';
+	// phpcs:enable
+	$pay_notes  = array(
+		'paid'        => array( 'ok', __( 'Payment received. Thank you, your booking %s is paid. A receipt is on its way by email.', 'sprint-booking' ) ),
+		'cancelled'   => array( 'warn', __( 'Payment cancelled. Your booking %s is saved. You can pay the driver, or use the payment link in your confirmation email.', 'sprint-booking' ) ),
+		'failed'      => array( 'warn', __( 'We could not confirm your payment for booking %s. If you were charged, please contact us with that reference.', 'sprint-booking' ) ),
+		'error'       => array( 'warn', __( 'We could not open the payment page for booking %s. You can pay the driver, or try the link in your confirmation email.', 'sprint-booking' ) ),
+		'unavailable' => array( 'warn', __( 'That payment link is not available for booking %s any more.', 'sprint-booking' ) ),
+		'busy'        => array( 'warn', __( 'Too many attempts for booking %s. Please wait a few minutes and try again.', 'sprint-booking' ) ),
+	);
+	if ( isset( $pay_notes[ $pay_result ] ) ) :
+		?>
+		<div class="sb-paybanner sb-paybanner--<?php echo esc_attr( $pay_notes[ $pay_result ][0] ); ?>" role="status"><?php echo esc_html( sprintf( $pay_notes[ $pay_result ][1], $pay_ref ?: '' ) ); ?></div>
+	<?php endif; ?>
+
 	<form class="sb-form" data-sb-form novalidate autocomplete="off">
 
 		<ol class="sb-steps" aria-label="<?php esc_attr_e( 'Booking steps', 'sprint-booking' ); ?>">
@@ -260,6 +279,23 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 					?>
 				</span>
 			</label>
+
+			<!-- How to pay: shown only when an online method is switched on and this booking has a fare. -->
+			<fieldset class="sb-pay" data-sb-pay hidden>
+				<legend><?php esc_html_e( 'How would you like to pay?', 'sprint-booking' ); ?></legend>
+				<label class="sb-paycard" data-sb-pay-opt="driver">
+					<input type="radio" name="payment" value="driver" checked>
+					<span class="sb-paycard__body"><strong><?php esc_html_e( 'Pay the driver', 'sprint-booking' ); ?></strong><small><?php esc_html_e( 'At the end of the journey', 'sprint-booking' ); ?></small></span>
+				</label>
+				<label class="sb-paycard" data-sb-pay-opt="stripe" hidden>
+					<input type="radio" name="payment" value="stripe">
+					<span class="sb-paycard__body"><strong><?php esc_html_e( 'Pay now by card', 'sprint-booking' ); ?></strong><small><?php esc_html_e( 'Secure payment page by Stripe', 'sprint-booking' ); ?></small></span>
+				</label>
+				<label class="sb-paycard" data-sb-pay-opt="paypal" hidden>
+					<input type="radio" name="payment" value="paypal">
+					<span class="sb-paycard__body"><strong><?php esc_html_e( 'Pay now with PayPal', 'sprint-booking' ); ?></strong><small><?php esc_html_e( 'You will log in to PayPal', 'sprint-booking' ); ?></small></span>
+				</label>
+			</fieldset>
 
 			<p class="sb-pay-note" data-sb-pay-note><?php esc_html_e( 'You pay the driver at the end of the journey.', 'sprint-booking' ); ?></p>
 

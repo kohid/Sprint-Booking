@@ -66,6 +66,7 @@ final class ChatBooking {
 			'operator' => (string) $cfg['voice']['operator_number'],
 			'formUrl'  => '' !== $form_url ? $form_url : (string) $cfg['voice']['form_url'],
 			'minLead'  => (int) $cfg['min_lead_minutes'],
+			'payments' => Payments::available(),
 			'services' => $services,
 			'vehicles' => $vehicles,
 			'earliest' => Rest::earliest_local( $cfg ),

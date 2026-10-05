@@ -244,6 +244,12 @@ final class Rest {
 		$q     = self::build_quote( $cfg, $stops, $opts, $back );
 		$quote = $q['quote_only'];
 
+		$pay = self::read_payment( $in, $quote );
+		if ( is_wp_error( $pay ) ) {
+			return $pay;
+		}
+		list( $pay_plain, $pay_hash ) = Payments::new_token();
+
 		if ( 'register' === $mode ) {
 			$user_id = Accounts::register( $contact['name'], $contact['email'], $contact['phone'], (string) ( $in['password'] ?? '' ) );
 			if ( is_wp_error( $user_id ) ) {
@@ -285,6 +291,9 @@ final class Rest {
 			'company'           => 'corporate' === $opts['service'] ? $contact['company'] : '',
 			'notes'             => $contact['notes'],
 			'source'            => in_array( $source, array( 'web', 'phone', 'chat', 'web_chat' ), true ) ? $source : 'web',
+			'payment_method'    => $pay,
+			'payment_status'    => in_array( $pay, PaymentRules::GATEWAYS, true ) ? 'pending' : 'unpaid',
+			'pay_token_hash'    => $pay_hash,
 			'created_at'        => gmdate( 'Y-m-d H:i:s' ),
 		);
 
@@ -296,6 +305,11 @@ final class Rest {
 		$row['reference'] = $saved['reference'];
 		$row['stops']        = $stops;
 		$row['return_stops'] = $back;
+
+		// Ways to pay online for this booking (none for a quote, or when no gateway is on).
+		$return_to = esc_url_raw( (string) ( $in['return_to'] ?? '' ) );
+		$links     = ( ! $quote && Payments::any_online() ) ? Payments::links( $saved['reference'], $pay_plain, $return_to ) : array();
+		$row['pay_links'] = $links;
 		Mailer::booking_created( $row );
 
 		return rest_ensure_response(
@@ -306,8 +320,32 @@ final class Rest {
 				'total_pence' => $row['price_pence'],
 				'signed_in'   => $user_id > 0 && in_array( $mode, array( 'register', 'login' ), true ),
 				'registered'  => 'register' === $mode,
+				'payment'     => $pay,
+				'pay_links'   => (object) $links,
+				// Set when the customer chose to pay online: the form sends them straight to the provider.
+				'redirect'    => in_array( $pay, PaymentRules::GATEWAYS, true ) ? (string) ( $links[ $pay ] ?? '' ) : '',
 			)
 		);
+	}
+
+	/**
+	 * How the customer says they will pay: driver, stripe or paypal. A quote has no fare, so nothing to pay.
+	 *
+	 * @return string|\WP_Error
+	 */
+	private static function read_payment( array $in, bool $quote_only ) {
+		$want = sanitize_key( (string) ( $in['payment'] ?? 'driver' ) );
+		if ( $quote_only ) {
+			return 'driver';
+		}
+		$ok = Payments::available();
+		if ( in_array( $want, PaymentRules::GATEWAYS, true ) ) {
+			return $ok[ $want ] ? $want : self::bad( __( 'That way of paying is not available. Choose another.', 'sprint-booking' ) );
+		}
+		if ( ! $ok['driver'] ) {
+			return self::bad( __( 'Please choose how to pay online.', 'sprint-booking' ) );
+		}
+		return 'driver';
 	}
 
 	// ── Building blocks ───────────────────────────────────────────

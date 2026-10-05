@@ -23,9 +23,10 @@ const VEH = { saloon: [1, 4, 2], estate: [1.1, 4, 3], mpv: [1.35, 6, 4], minibus
 async function newPage(browser, opts = {}) {
   const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 }, deviceScaleFactor: opts.dpr || 1 });
   const page = await ctx.newPage();
-  const log = { tiles: [], quotes: [], errors: [], posted: [], geocodeCalls: [], headers: [], bookingError: null };
+  const log = { payLinks: false, tiles: [], quotes: [], errors: [], posted: [], geocodeCalls: [], headers: [], bookingError: null };
   page.on('pageerror', e => log.errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !/tiles\.test|ERR_/.test(m.text())) log.errors.push('console: ' + m.text()); });
+  await page.route('http://pay.test/**', r => r.fulfill({ contentType: 'text/html', body: '<h1>Provider page</h1>' }));
   await page.route('http://tiles.test/**', r => { log.tiles.push(r.request().url()); r.abort(); });
   await page.route('**/wp-json/sprint-booking/v1/**', async route => {
     const req = route.request(); const url = new URL(req.url()); const ep = url.pathname.split('/').pop();
@@ -59,7 +60,12 @@ async function newPage(browser, opts = {}) {
       return json({ distance_m: dist, duration_s: Math.round(dist / 11), legs, geometry: g, estimated: false, return_distance_m: back ? rdist : null, return_duration_s: back ? Math.round(rdist / 11) : null, return_legs: back ? rlegs : null, return_geometry: back ? rg : null, quote_only: quoteOnly, reason: quoteOnly ? 'service' : null, lines, total_pence: quoteOnly ? null : price(veh), vehicles });
     }
     if (ep === 'bookings' && log.bookingError) { const err = log.bookingError; log.bookingError = null; log.posted.push(b); return json(err, 400); }
-    if (ep === 'bookings') { log.posted.push(b); return json({ reference: 'SB-TEST42', status: 'new', quote_only: ['wedding', 'tours'].includes(b.service), total_pence: 4200, registered: b.account_mode === 'register', signed_in: ['register', 'login'].includes(b.account_mode) }); }
+    if (ep === 'bookings') {
+      log.posted.push(b);
+      const links = log.payLinks && !['wedding', 'tours'].includes(b.service) ? { stripe: 'http://pay.test/stripe-link', paypal: 'http://pay.test/paypal-link' } : {};
+      const redirect = log.payLinks && ['stripe', 'paypal'].includes(b.payment) ? 'http://pay.test/' + b.payment + '?ref=SB-TEST42' : '';
+      return json({ reference: 'SB-TEST42', status: 'new', quote_only: ['wedding', 'tours'].includes(b.service), total_pence: 4200, registered: b.account_mode === 'register', signed_in: ['register', 'login'].includes(b.account_mode), payment: b.payment || 'driver', pay_links: links, redirect });
+    }
     return json({ message: 'nope' }, 404);
   });
   return { page, ctx, log };
@@ -367,6 +373,77 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert(/moved it to the earliest time available/.test(await sv.textContent('[data-sb-errors]')), 'explains the pickup was moved');
   assert.strictEqual((await val(sv, 'pickup_date')) + 'T' + (await val(sv, 'pickup_time')), earliest, 'pickup set to the earliest time the server allows');
   await c2.ctx.close();
+
+  // ── Online payment: Stripe and PayPal cards on the last step ──
+  const p5 = await newPage(browser); const py = p5.page; p5.log.payLinks = true;
+  const toStep3 = async (pg, service, passengers) => {
+    await pg.selectOption('[name=service]', service);
+    await suggest(pg, '[data-sb-stops] .sb-stop--pickup', 'castle'); await pickFirst(pg, '[data-sb-stops] .sb-stop--pickup');
+    await suggest(pg, '[data-sb-stops] .sb-stop--dropoff', 'aberdeen'); await pickFirst(pg, '[data-sb-stops] .sb-stop--dropoff');
+    await pg.waitForSelector('.sb-total');
+    await pg.click('[data-sb-next]'); await pg.waitForSelector('[data-panel="2"]:not([hidden])');
+    await pg.click('[data-sb-next]'); await pg.waitForSelector('[data-panel="3"]:not([hidden])');
+  };
+  await py.goto(BASE + '/index-pay.html'); await py.waitForSelector('.sb-stop');
+  await toStep3(py, 'corporate');
+  assert(await py.locator('[data-sb-pay]').isVisible(), 'the payment choice appears when a gateway is on');
+  assert.deepStrictEqual(await py.locator('[data-sb-pay-opt]:visible strong').allTextContents(), ['Pay the driver', 'Pay now by card', 'Pay now with PayPal']);
+  assert.strictEqual(await py.inputValue('input[name=payment]:checked'), 'driver', 'paying the driver is the default');
+  assert.strictEqual((await py.textContent('[data-sb-submit]')).trim(), 'Confirm booking');
+  assert(/pay the driver/i.test(await py.textContent('[data-sb-pay-note]')));
+  await py.locator('[data-sb-pay-opt=stripe]').click();
+  assert(/^Confirm and pay £\d+\.\d\d$/.test((await py.textContent('[data-sb-submit]')).trim()), 'the button says what will be charged: ' + await py.textContent('[data-sb-submit]'));
+  assert(/secure page to pay £\d+\.\d\d/.test(await py.textContent('[data-sb-pay-note]')), 'the note explains what happens');
+  assert(await py.locator('[data-sb-pay-opt=stripe]').evaluate(n => n.classList.contains('is-selected')), 'the chosen card is highlighted');
+  await py.screenshot({ path: OUT + '/07-payment-choice.png', fullPage: true });
+  await py.fill('[name=first_name]', 'Test'); await py.fill('[name=last_name]', 'Person'); await py.fill('[name=email]', 'test@example.com'); await py.fill('[name=phone]', '07700 900123'); await py.check('[name=terms]');
+  await py.waitForTimeout(3100);
+  await Promise.all([py.waitForURL('http://pay.test/stripe**'), py.click('[data-sb-submit]')]);
+  const sent = p5.log.posted.at(-1);
+  assert.strictEqual(sent.payment, 'stripe'); assert(/\/index-pay\.html$/.test(sent.return_to) && !sent.return_to.includes('?'), 'the form tells the server which page to come back to: ' + sent.return_to);
+  await p5.ctx.close();
+
+  // PayPal, and pay the driver while links are still offered
+  const p6 = await newPage(browser); const py2 = p6.page; p6.log.payLinks = true;
+  await py2.goto(BASE + '/index-pay.html'); await py2.waitForSelector('.sb-stop'); await toStep3(py2, 'golf');
+  await py2.locator('[data-sb-pay-opt=paypal]').click();
+  await py2.fill('[name=first_name]', 'Test'); await py2.fill('[name=last_name]', 'Person'); await py2.fill('[name=email]', 'test@example.com'); await py2.fill('[name=phone]', '07700 900123'); await py2.check('[name=terms]');
+  await py2.waitForTimeout(3100);
+  await Promise.all([py2.waitForURL('http://pay.test/paypal**'), py2.click('[data-sb-submit]')]);
+  assert.strictEqual(p6.log.posted.at(-1).payment, 'paypal');
+  await p6.ctx.close();
+
+  const p7 = await newPage(browser); const py3 = p7.page; p7.log.payLinks = true;
+  await py3.goto(BASE + '/index-pay.html'); await py3.waitForSelector('.sb-stop'); await toStep3(py3, 'golf');
+  await py3.fill('[name=first_name]', 'Test'); await py3.fill('[name=last_name]', 'Person'); await py3.fill('[name=email]', 'test@example.com'); await py3.fill('[name=phone]', '07700 900123'); await py3.check('[name=terms]');
+  await py3.waitForTimeout(3100);
+  await py3.click('[data-sb-submit]'); await py3.waitForSelector('.sb-done:not([hidden])');
+  assert.strictEqual(p7.log.posted.at(-1).payment, 'driver');
+  assert(/Prefer to pay now/.test(await py3.textContent('.sb-done')) && await py3.locator('.sb-done a[href="http://pay.test/stripe-link"]').count() === 1 && await py3.locator('.sb-done a[href="http://pay.test/paypal-link"]').count() === 1, 'after booking, pay-now links are offered to someone who chose the driver');
+  await p7.ctx.close();
+
+  // A quote has no fare, so there is nothing to pay
+  const p8 = await newPage(browser); const py4 = p8.page;
+  await py4.goto(BASE + '/index-pay.html'); await py4.waitForSelector('.sb-stop'); await toStep3(py4, 'wedding');
+  assert(await py4.locator('[data-sb-pay]').isHidden(), 'no payment choice for a quote request');
+  assert.strictEqual((await py4.textContent('[data-sb-submit]')).trim(), 'Send quote request');
+  await p8.ctx.close();
+
+  // No gateway on: the form is exactly as before
+  const p9 = await newPage(browser); const py5 = p9.page;
+  await py5.goto(BASE + '/index.html'); await py5.waitForSelector('.sb-stop'); await toStep3(py5, 'golf');
+  assert(await py5.locator('[data-sb-pay]').isHidden(), 'no payment choice when no gateway is on');
+  assert.strictEqual((await py5.textContent('[data-sb-submit]')).trim(), 'Confirm booking');
+  await p9.ctx.close();
+
+  // Coming back from the provider
+  const p10 = await newPage(browser); const pb = p10.page;
+  await pb.goto(BASE + '/index-paid.html'); await pb.waitForSelector('.sb-paybanner--ok');
+  assert(/Payment received.*SB-TEST42.*paid/.test(await pb.textContent('.sb-paybanner')), 'paid banner: ' + await pb.textContent('.sb-paybanner'));
+  await pb.screenshot({ path: OUT + '/08-paid-banner.png' });
+  await pb.goto(BASE + '/index-cancel.html'); await pb.waitForSelector('.sb-paybanner--warn');
+  assert(/Payment cancelled.*SB-TEST42.*saved/.test(await pb.textContent('.sb-paybanner')), 'cancelled banner');
+  await p10.ctx.close();
 
   // ── Mobile layout ──
   const m = await newPage(browser, { viewport: { width: 390, height: 844 }, dpr: 2 }); const mp = m.page;

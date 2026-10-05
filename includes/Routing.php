@@ -26,7 +26,7 @@ final class Routing {
 	 * @param array<int,array{lat:float,lng:float}> $points Pickup, vias in order, drop-off.
 	 * @return array{distance_m:int,duration_s:int,legs:int[],geometry:?array,estimated:bool}
 	 */
-	public static function route( array $points ): array {
+	public static function route( array $points, bool $network = true ): array {
 		$cfg = Settings::get();
 		$key = 'sb_route_' . md5( wp_json_encode( array_map( static fn( $p ) => array( round( $p['lat'], 5 ), round( $p['lng'], 5 ) ), $points ) ) . $cfg['routing_base_url'] );
 
@@ -35,7 +35,8 @@ final class Routing {
 			return $cached;
 		}
 
-		$result = self::osrm( $points, $cfg['routing_base_url'] );
+		// $network false: skip the router and estimate (the demo generator does this after the router has failed once).
+		$result = $network ? self::osrm( $points, $cfg['routing_base_url'] ) : null;
 		if ( null === $result ) {
 			return self::fallback( $points ); // Not cached: retry the router next time.
 		}

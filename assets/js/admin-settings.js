@@ -47,7 +47,7 @@
 		if ( ! tabs.some( function ( t ) { return t.getAttribute( 'data-sb-tab' ) === key; } ) ) { key = tabs[ 0 ].getAttribute( 'data-sb-tab' ); }
 		tabs.forEach( function ( t ) { t.setAttribute( 'aria-selected', t.getAttribute( 'data-sb-tab' ) === key ? 'true' : 'false' ); } );
 		panels.forEach( function ( p ) { p.hidden = p.getAttribute( 'data-sb-panel' ) !== key; } );
-		if ( savebar ) { savebar.hidden = 'shortcodes' === key || 'email' === key; }
+		if ( savebar ) { savebar.hidden = [ 'shortcodes', 'email', 'demo' ].indexOf( key ) > -1; }
 		if ( remember ) {
 			try { window.localStorage.setItem( 'sbSettingsTab', key ); } catch ( e ) { /* private mode: fine */ }
 			if ( window.history.replaceState ) { window.history.replaceState( null, '', '#' + key ); }

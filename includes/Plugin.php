@@ -16,6 +16,8 @@ final class Plugin {
 		add_action( 'rest_api_init', array( AdminRest::class, 'register' ) );
 		add_action( 'rest_api_init', array( Voice::class, 'register' ) );
 		add_action( 'rest_api_init', array( ChatApi::class, 'register' ) );
+		add_action( 'rest_api_init', array( Payments::class, 'register' ) );
+		add_action( 'rest_api_init', array( Demo::class, 'register' ) );
 		ChatBooking::init();
 		Shortcode::init();
 		MyBookings::init();

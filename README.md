@@ -45,6 +45,17 @@ Phone bookings use the same pricing, limits and emails as the website form, are 
 
 Not built yet: the AI conversation itself (that lives in ElevenLabs), a customer-facing "my bookings" inside the chat, and changing addresses on an existing booking (cancel and rebook instead).
 
+**Payments (Settings → Payments).** Customers can pay the driver (the default) or pay online with Stripe (card) or PayPal. They pay on the provider's own page, so card details never reach your site; the plugin only learns the outcome.
+
+- **Where to put the keys:** Stripe: a secret key (`sk_test_…` for sandbox, `sk_live_…` for live; restricted `rk_` keys work) and, for the webhook, its signing secret. PayPal: a client ID and secret from a sandbox or live app. Each gateway has a Sandbox switch and separate boxes for sandbox and live keys; a key of the wrong kind switches that gateway off. Saved keys are never shown again (only the last four characters), a blank box keeps what is saved, and "Remove saved keys" clears them. **Test connection** checks a key without charging anything.
+- **Stripe webhook:** add `…/wp-json/sprint-booking/v1/pay/stripe-webhook` in Stripe for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Payments are also confirmed when the customer comes back to your site, so the webhook mainly catches customers who close the tab. PayPal needs no webhook: the order is captured and checked on return.
+- **How a payment is trusted:** a booking is marked paid only after Stripe or PayPal confirms it to the server (a signed webhook, or the plugin asking the provider directly), for the exact fare and currency stored on the booking, once only. The browser's word is never enough. Every booking has a random pay token (only its hash is stored); a payment link without it does nothing.
+- **Where the buttons are:** the booking form (last step: pay the driver, pay now by card, pay now with PayPal), the website chat and Test chat (after the fare), and the phone agent (`payment` is `driver`, `stripe` or `paypal`; a secure link is in the confirmation email, because the agent must never take card numbers). Confirmation emails carry "Pay now" links for anyone who chose the driver but changes their mind. Quote requests have no fare, so no payment.
+- **After payment:** the customer gets a receipt, the office gets a note, the dashboard shows a Paid / Awaiting payment badge, and the CSV has a Payment column. Cancelling a paid booking alerts the office that a refund is due; refunds themselves are made in Stripe or PayPal.
+- Tested with simulated Stripe and PayPal servers (`tests/payment-flow-test.php`). Run a sandbox payment before going live: the plugin cannot prove the providers' live responses match.
+
+**Demo data (Settings → Demo).** "Generate 60 demo bookings" makes 10 for each of the six services, one service at a time with progress, using your tariff and routing service. Customers are made up (reserved 07700 900xxx numbers, example.com emails), nothing is emailed and no payment is taken. Demo bookings carry a Demo badge, count in dashboard figures, and "Delete demo data" removes only rows marked demo.
+
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
 
 The dashboard shortcodes show a sign-in form to visitors and a "No access" notice to signed-in users whose role is not ticked; the data itself is only served to staff by the REST API.
@@ -103,6 +114,9 @@ php tests/geocoder-test.php           # address suggestion parsing
 php tests/dashboard-test.php          # filters, overview numbers, row presentation
 php tests/catalogue-test.php          # Settings -> Shortcodes matches registered shortcodes
 php tests/voice-test.php              # phone numbers, blocked list, secret
+php tests/payment-test.php            # amounts, webhook signatures, redirect safety
+php tests/payment-flow-test.php       # the Payments class against simulated Stripe/PayPal
+php tests/demo-test.php               # demo data plan
 # dashboard-test.php also covers cancel/change rules and the daily report
 ```
 

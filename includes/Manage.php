@@ -41,7 +41,8 @@ final class Manage {
 			}
 			Bookings::update_status( (int) $b['id'], 'cancelled' );
 			do_action( 'sb_booking_status_changed', (int) $b['id'], 'cancelled' ); // Emails the customer.
-			Mailer::office_alert( 'Booking cancelled by customer ' . $b['reference'], 'The customer cancelled ' . $b['reference'] . " (pickup was {$when( $pickup )}) via " . $source . '.' );
+			$refund = 'paid' === ( $b['payment_status'] ?? '' ) ? ' THIS BOOKING WAS PAID ONLINE (' . $b['payment_method'] . ', ' . $b['payment_ref'] . '): refund it from the payment provider.' : '';
+			Mailer::office_alert( 'Booking cancelled by customer ' . $b['reference'], 'The customer cancelled ' . $b['reference'] . " (pickup was {$when( $pickup )}) via " . $source . '.' . $refund );
 			Calls::log( 'cancelled', $source, (string) $b['reference'] );
 			return array( 'message' => sprintf( /* translators: %s: booking reference */ __( 'Booking %s is cancelled. A confirmation is on its way by email.', 'sprint-booking' ), $b['reference'] ), 'reference' => (string) $b['reference'], 'status' => 'cancelled' );
 		}

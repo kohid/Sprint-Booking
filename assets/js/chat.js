@@ -42,7 +42,7 @@
 	}
 
 	var S; // the booking being built
-	function fresh() { var keep = S && S.asap; S = { asap: !! keep, service: '', direction: '', pickup: null, vias: [], dropoff: null, when: '', pax: 0, bags: 0, vehicle: '', pets: null, name: '', phone: '', email: '', quote: null }; }
+	function fresh() { var keep = S && S.asap; S = { pay: 'driver', asap: !! keep, service: '', direction: '', pickup: null, vias: [], dropoff: null, when: '', pax: 0, bags: 0, vehicle: '', pets: null, name: '', phone: '', email: '', quote: null }; }
 	fresh();
 
 	// ── Layout: conversation on the left, the booking sheet on the right ──
@@ -120,7 +120,8 @@
 		if ( S.name ) { row( 'Name', S.name ); }
 		if ( S.phone ) { row( 'Phone', S.phone ); }
 		if ( S.email ) { row( 'Email', S.email ); }
-		if ( S.quote ) { row( 'Fare', S.quote.quote_only ? 'To be quoted' : money( S.quote.total_pence ) + ' (pay the driver)' ); }
+		if ( S.quote ) { row( 'Fare', S.quote.quote_only ? 'To be quoted' : money( S.quote.total_pence ) + ( S.pay === 'driver' ? ' (pay the driver)' : '' ) ); }
+		if ( S.quote && ! S.quote.quote_only && S.pay !== 'driver' ) { row( 'Payment', S.pay === 'stripe' ? 'Card, paid online' : 'PayPal, paid online' ); }
 		rows.forEach( function ( r ) { dl.appendChild( r ); } );
 		if ( ! stops.length && ! rows.length ) { sheet.appendChild( el( 'p', { 'class': 'sb-chat__empty', text: 'Answers appear here as you give them.' } ) ); }
 		sheet.appendChild( dl );
@@ -352,7 +353,7 @@
 	}
 
 	function payload() {
-		return { service: S.service, airport_direction: S.direction, vehicle: S.vehicle, passengers: S.pax, luggage: S.bags, carry_on: 0, pickup_at: S.when, pickup: S.pickup, vias: S.vias, dropoff: S.dropoff, name: S.name, phone: S.phone, email: S.email, pets: S.pets, website: '' };
+		return { service: S.service, airport_direction: S.direction, vehicle: S.vehicle, passengers: S.pax, luggage: S.bags, carry_on: 0, pickup_at: S.when, pickup: S.pickup, vias: S.vias, dropoff: S.dropoff, name: S.name, phone: S.phone, email: S.email, pets: S.pets, website: '', payment: S.pay, return_to: window.location.origin + window.location.pathname };
 	}
 
 	function summarise() {
@@ -362,16 +363,47 @@
 				S.quote = q; renderSheet();
 				var fare = q.quote_only ? 'This one is priced by quote, so we will email you a price.' : 'The fare is ' + money( q.total_pence ) + ', paid to the driver.';
 				bot( fare + ' Shall I book it?', function () {
-					chips( [ { label: 'Book it', value: 1 }, { label: 'Start again', value: 0 } ], function ( y ) { if ( y ) { book(); } else { fresh(); renderSheet(); backToMenu(); } } );
+					chips( [ { label: 'Book it', value: 1 }, { label: 'Start again', value: 0 } ], function ( y ) { if ( y ) { askPayment(); } else { fresh(); renderSheet(); backToMenu(); } } );
 				} );
 			} ).catch( function ( e ) { bot( e.message, function () { chips( [ { label: 'Back to the menu', value: 0 } ], function () { fresh(); renderSheet(); backToMenu(); } ); } ); } );
 		} );
 	}
 
+	// How to pay: only when an online method is on and there is a fare to pay.
+	function askPayment() {
+		var P = CFG.payments || {};
+		var priced = S.quote && ! S.quote.quote_only && S.quote.total_pence != null;
+		if ( ! priced || ! ( P.stripe || P.paypal ) ) { S.pay = 'driver'; book(); return; }
+		var opts = [];
+		if ( P.driver ) { opts.push( { label: 'Pay the driver', value: 'driver' } ); }
+		if ( P.stripe ) { opts.push( { label: 'Pay now by card', value: 'stripe' } ); }
+		if ( P.paypal ) { opts.push( { label: 'Pay now with PayPal', value: 'paypal' } ); }
+		bot( 'How would you like to pay ' + money( S.quote.total_pence ) + '?', function () {
+			chips( opts, function ( v ) { S.pay = v; renderSheet(); book(); } );
+		} );
+	}
+
+	function payButtons( r, lead ) {
+		var links = r.pay_links || {};
+		var kids = [];
+		if ( links.stripe ) { kids.push( el( 'a', { 'class': 'sb-d-btn sb-d-btn--primary', href: links.stripe, target: '_blank', rel: 'noopener', text: 'Pay by card' } ) ); }
+		if ( links.paypal ) { kids.push( el( 'a', { 'class': 'sb-d-btn sb-d-btn--light', href: links.paypal, target: '_blank', rel: 'noopener', text: 'Pay with PayPal' } ) ); }
+		if ( ! kids.length ) { fresh(); renderSheet(); backToMenu(); return; }
+		kids.push( el( 'button', { type: 'button', 'class': 'sb-chat__chip', text: 'Back to the menu', onclick: function () { say( 'Back to the menu', 'me' ); fresh(); renderSheet(); backToMenu(); } } ) );
+		clearTray();
+		tray.appendChild( el( 'div', { 'class': 'sb-chat__chips' }, kids ) );
+	}
+
 	function book() {
 		bot( 'Booking it now.', function () {
 			api( 'admin/chat/book', { method: 'POST', body: payload() } ).then( function ( r ) {
-				bot( r.message || ( 'Booked ' + r.reference ), function () { fresh(); renderSheet(); backToMenu(); } );
+				var online = r.payment === 'stripe' || r.payment === 'paypal';
+				var offer = Object.keys( r.pay_links || {} ).length > 0;
+				bot( r.message || ( 'Booked ' + r.reference ), function () {
+					if ( online || offer ) {
+						bot( online ? 'Tap to pay now. It opens a secure page in a new tab.' : 'If you would rather pay now, use a button below. The link is also in your email.', function () { payButtons( r ); } );
+					} else { fresh(); renderSheet(); backToMenu(); }
+				} );
 			} ).catch( function ( e ) {
 				bot( e.message, function () {
 					chips( [ { label: 'Change the pickup time', value: 'when' }, { label: 'Start again', value: 'again' } ], function ( v ) { if ( v === 'when' ) { askWhen( summarise ); } else { fresh(); renderSheet(); backToMenu(); } } );

@@ -153,4 +153,40 @@ final class Bookings {
 		global $wpdb;
 		return false !== $wpdb->update( Activator::table(), array( 'pickup_at' => $utc ), array( 'id' => $id ), array( '%s' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 	}
+
+	/**
+	 * Update payment columns only (payment_method, payment_status, payment_ref, paid_pence, paid_at).
+	 *
+	 * @param array<string,mixed> $fields
+	 */
+	public static function set_payment( int $id, array $fields ): bool {
+		global $wpdb;
+		$allowed = array( 'payment_method' => '%s', 'payment_status' => '%s', 'payment_ref' => '%s', 'paid_pence' => '%d', 'paid_at' => '%s' );
+		$data    = array_intersect_key( $fields, $allowed );
+		if ( ! $data ) {
+			return false;
+		}
+		// Starting a payment must never overwrite one that has already been confirmed.
+		if ( 'pending' === ( $data['payment_status'] ?? '' ) ) {
+			$table = Activator::table();
+			$sets  = array();
+			$args  = array();
+			foreach ( $data as $col => $val ) {
+				$sets[] = "{$col} = " . $allowed[ $col ];
+				$args[] = $val;
+			}
+			$args[] = $id;
+			return false !== $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET " . implode( ', ', $sets ) . " WHERE id = %d AND payment_status <> 'paid'", ...$args ) ); // phpcs:ignore WordPress.DB
+		}
+		$formats = array_values( array_intersect_key( $allowed, $data ) );
+		return false !== $wpdb->update( Activator::table(), $data, array( 'id' => $id ), $formats, array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
+
+	/** Mark paid exactly once, even if the webhook and the customer's return arrive together. True only for the call that did it. */
+	public static function mark_paid_once( int $id, string $method, string $ref, int $pence ): bool {
+		global $wpdb;
+		$table = Activator::table();
+		$n     = $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET payment_status = 'paid', payment_method = %s, payment_ref = %s, paid_pence = %d, paid_at = %s WHERE id = %d AND payment_status <> 'paid'", $method, $ref, $pence, gmdate( 'Y-m-d H:i:s' ), $id ) ); // phpcs:ignore WordPress.DB
+		return 1 === (int) $n;
+	}
 }

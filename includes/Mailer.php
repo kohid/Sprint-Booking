@@ -50,6 +50,8 @@ final class Mailer {
 		$lines[] = 'Passengers: ' . $b['passengers'] . ', suitcases: ' . $b['luggage'] . ', carry-on: ' . $b['carry_on'];
 		$lines[] = 'Vehicle:   ' . ( $cfg['vehicles'][ $b['vehicle'] ]['label'] ?? $b['vehicle'] );
 		$lines[] = 'Fare:      ' . ( null === $b['price_pence'] ? 'To be quoted' : Settings::money( (int) $b['price_pence'] ) . ' (pay the driver)' );
+		$method  = (string) ( $b['payment_method'] ?? 'driver' );
+		$lines[] = 'Payment:   ' . ( 'stripe' === $method ? 'online by card (Stripe), awaiting confirmation' : ( 'paypal' === $method ? 'online by PayPal, awaiting confirmation' : 'pay the driver' ) );
 		$lines[] = '';
 		if ( ! empty( $b['source'] ) && 'web' !== $b['source'] ) {
 			$lines[] = 'Booked by: ' . ( array( 'phone' => 'phone agent', 'web_chat' => 'website chat', 'chat' => 'test chat' )[ $b['source'] ] ?? $b['source'] );
@@ -77,10 +79,18 @@ final class Mailer {
 		self::send( $office, ( $quote ? 'Quote request ' : 'New booking ' ) . $b['reference'], $body, array( $reply ), 'office' );
 
 		// Customer copy.
+		$pay_lines = '';
+		if ( ! $quote && ! empty( $b['pay_links'] ) ) {
+			$names = array( 'stripe' => 'Pay by card', 'paypal' => 'Pay with PayPal' );
+			$pay_lines = "\n\n" . ( in_array( $b['payment_method'], PaymentRules::GATEWAYS, true ) ? "Finish your payment online:\n" : "Prefer to pay now? You can pay securely online instead of paying the driver:\n" );
+			foreach ( $b['pay_links'] as $g => $url ) {
+				$pay_lines .= ( $names[ $g ] ?? $g ) . ': ' . $url . "\n";
+			}
+		}
 		$intro = $quote
 			? "Thanks for your enquiry. We will price this and get back to you shortly.\n\n"
 			: "Thanks for booking. Your booking is received and we will confirm it shortly. Pay your driver at the end of the journey.\n\n";
-		self::send( $b['customer_email'], ( $quote ? 'We received your quote request ' : 'We received your booking ' ) . $b['reference'], $intro . $body, array( 'Reply-To: ' . $office ), 'customer' );
+		self::send( $b['customer_email'], ( $quote ? 'We received your quote request ' : 'We received your booking ' ) . $b['reference'], $intro . $body . $pay_lines, array( 'Reply-To: ' . $office ), 'customer' );
 	}
 
 	/** Tell the customer when staff confirm, assign or cancel their booking. */
@@ -155,5 +165,14 @@ final class Mailer {
 		$cfg    = Settings::get();
 		$office = $cfg['notify_email'] ?: get_option( 'admin_email' );
 		self::send( (string) $office, $subject, $body, array(), 'office' );
+	}
+
+	/** Receipt to the customer and a note to the office once a payment is confirmed by the provider. */
+	public static function payment_received( array $b ): void {
+		$amount = Settings::money( (int) ( $b['paid_pence'] ?? 0 ) );
+		$how    = 'paypal' === $b['payment_method'] ? 'PayPal' : 'card (Stripe)';
+		$body   = "Thank you. We have received your payment.\n\nBooking: " . $b['reference'] . "\nPaid: " . $amount . ' by ' . $how . "\nPayment reference: " . $b['payment_ref'] . "\n\nNothing more to pay for this journey.";
+		self::send( (string) $b['customer_email'], 'Payment received ' . $b['reference'], $body, array(), 'status' );
+		self::office_alert( 'PAID ' . $b['reference'] . ' ' . $amount, 'Booking ' . $b['reference'] . ' was paid online: ' . $amount . ' by ' . $how . '. Provider reference: ' . $b['payment_ref'] . '.' );
 	}
 }

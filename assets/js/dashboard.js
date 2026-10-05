@@ -238,8 +238,14 @@
 		} else {
 			var dl = el( 'dl', { 'class': 'sb-d-lines' } );
 			r.lines.forEach( function ( l ) { dl.appendChild( el( 'div', {}, [ el( 'dt', { text: LINE_LABELS[ l.key ] || l.key } ), el( 'dd', { text: money( l.pence ) } ) ] ) ); } );
-			dl.appendChild( el( 'div', { 'class': 'sb-d-lines__total' }, [ el( 'dt', { text: 'Total (pay the driver)' } ), el( 'dd', { text: r.price_text } ) ] ) );
+			var paid = r.payment && r.payment.paid;
+			dl.appendChild( el( 'div', { 'class': 'sb-d-lines__total' }, [ el( 'dt', { text: paid ? 'Total (paid)' : ( r.payment && r.payment.method !== 'driver' ? 'Total (online payment)' : 'Total (pay the driver)' ) } ), el( 'dd', { text: r.price_text } ) ] ) );
 			fare.push( dl );
+			if ( paid ) {
+				fare.push( el( 'p', { 'class': 'sb-d-paid' }, [ el( 'span', { 'class': 'sb-d-badge sb-d-badge--success', text: 'Paid' } ), ' ' + ( r.payment.paid_text || r.price_text ) + ' by ' + ( r.payment.method === 'paypal' ? 'PayPal' : 'card (Stripe)' ) + ( r.payment.ref ? ', ref ' + r.payment.ref : '' ) ] ) );
+			} else if ( r.payment && ( r.payment.method === 'stripe' || r.payment.method === 'paypal' ) ) {
+				fare.push( el( 'p', { 'class': 'sb-d-paid' }, [ el( 'span', { 'class': 'sb-d-badge sb-d-badge--warning', text: 'Awaiting payment' } ), ' The customer chose to pay online by ' + ( r.payment.method === 'paypal' ? 'PayPal' : 'card' ) + ' but it has not been confirmed yet.' ] ) );
+			}
 		}
 		body.appendChild( section( 'Fare', fare ) );
 
@@ -524,12 +530,12 @@
 		rows.forEach( function ( r ) {
 			var open = function ( e ) { if ( e.target.closest( 'a' ) ) { return; } openDrawer( r, e.currentTarget.querySelector( '.sb-d-link' ), function () { app.reload(); } ); };
 			var tr = el( 'tr', { 'class': 'sb-d-row', onclick: open }, [
-				el( 'td', {}, [ el( 'button', { type: 'button', 'class': 'sb-d-link', onclick: function ( e ) { e.stopPropagation(); openDrawer( r, e.currentTarget, function () { app.reload(); } ); }, text: r.reference } ), el( 'div', { 'class': 'sb-d-muted', text: r.created.day + ' ' + r.created.time } ) ] ),
+				el( 'td', {}, [ el( 'button', { type: 'button', 'class': 'sb-d-link', onclick: function ( e ) { e.stopPropagation(); openDrawer( r, e.currentTarget, function () { app.reload(); } ); }, text: r.reference } ), r.source === 'demo' ? el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-demo', text: 'Demo' } ) : null, el( 'div', { 'class': 'sb-d-muted', text: r.created.day + ' ' + r.created.time } ) ] ),
 				el( 'td', {}, [ el( 'div', { 'class': 'sb-d-strong', text: r.pickup.day } ), el( 'div', { 'class': 'sb-d-muted', text: r.pickup.time + ( r.return ? ' · return ' + r.return.time : '' ) } ) ] ),
 				el( 'td', {}, [ el( 'div', { 'class': 'sb-d-who' }, [ avatar( r.customer.name, 'primary' ), el( 'div', { 'class': 'sb-d-who__text' }, [ el( 'div', { 'class': 'sb-d-strong sb-d-clip', text: customerName( r.customer ) } ), el( 'a', { 'class': 'sb-d-muted', href: 'tel:' + r.customer.phone.replace( /[^0-9+]/g, '' ), text: r.customer.phone } ) ] ) ] ) ] ),
 				el( 'td', { 'class': 'sb-d-cell-route' }, [ el( 'div', { 'class': 'sb-d-clip2', title: routeText( r ), text: routeText( r ) } ), r.vulnerable ? el( 'span', { 'class': 'sb-d-flag', text: '⚠ ' + r.vulnerable.label } ) : null ] ),
 				el( 'td', {}, [ el( 'div', { text: r.service_label } ), el( 'div', { 'class': 'sb-d-muted', text: r.vehicle_label + ' · ' + r.passengers + ' pax' } ) ] ),
-				el( 'td', { 'class': 'sb-d-num' }, [ el( 'span', { 'class': 'sb-d-strong', text: r.price_text || 'Quote' } ) ] ),
+				el( 'td', { 'class': 'sb-d-num' }, [ el( 'span', { 'class': 'sb-d-strong', text: r.price_text || 'Quote' } ), payBadge( r ) ] ),
 				el( 'td', {}, [ badge( r.status ) ] )
 			] );
 			body.appendChild( tr );
@@ -539,6 +545,15 @@
 			el( 'thead', {}, [ el( 'tr', {}, heads.map( function ( h ) { return el( 'th', { scope: 'col', 'class': h === 'Fare' ? 'sb-d-num' : '', text: h } ); } ) ) ] ),
 			body
 		] );
+	}
+
+	/** Small badge under the fare: Paid, or waiting for an online payment. Nothing for pay-the-driver. */
+	function payBadge( r ) {
+		var p = r.payment;
+		if ( ! p || r.price_pence === null ) { return null; }
+		if ( p.paid ) { return el( 'div', {}, [ el( 'span', { 'class': 'sb-d-badge sb-d-badge--success', text: 'Paid' } ) ] ); }
+		if ( p.method === 'stripe' || p.method === 'paypal' ) { return el( 'div', {}, [ el( 'span', { 'class': 'sb-d-badge sb-d-badge--warning', text: 'Awaiting payment' } ) ] ); }
+		return null;
 	}
 
 	function pagination( app, res, reload ) {
@@ -564,10 +579,10 @@
 		var f = app.filters;
 		btn.disabled = true;
 		api( 'admin/bookings?' + qs( { status: f.status, q: f.q, from: f.from, to: f.to, sort: f.sort, page: 1, per_page: 2000, 'export': 1 } ) ).then( function ( res ) {
-			var head = [ 'Reference', 'Status', 'Service', 'Pickup', 'Return', 'From', 'To', 'Via stops', 'Miles', 'Return from', 'Return to', 'Fare', 'Passengers', 'Suitcases', 'Carry-on', 'Customer', 'Phone', 'Email', 'Flight', 'Company', 'Vulnerable', 'Notes', 'Booked' ];
+			var head = [ 'Reference', 'Status', 'Service', 'Pickup', 'Return', 'From', 'To', 'Via stops', 'Miles', 'Return from', 'Return to', 'Fare', 'Payment', 'Passengers', 'Suitcases', 'Carry-on', 'Customer', 'Phone', 'Email', 'Flight', 'Company', 'Vulnerable', 'Notes', 'Booked' ];
 			var lines = [ head.map( csvCell ).join( ',' ) ];
 			res.rows.forEach( function ( r ) {
-				lines.push( [ r.reference, r.status_label, r.service_label + ( r.direction ? ' (' + r.direction + ')' : '' ), r.pickup.iso.replace( 'T', ' ' ), r.return ? r.return.iso.replace( 'T', ' ' ) : '', r.from, r.to, r.vias, r.distance_mi, r.return_route ? r.return_route.from : '', r.return_route ? r.return_route.to : '', r.price_text || 'Quote', r.passengers, r.luggage, r.carry_on, customerName( r.customer ), r.customer.phone, r.customer.email, r.flight_no, r.company, r.vulnerable ? r.vulnerable.label : '', r.notes, r.created.iso.replace( 'T', ' ' ) ].map( csvCell ).join( ',' ) );
+				lines.push( [ r.reference, r.status_label, r.service_label + ( r.direction ? ' (' + r.direction + ')' : '' ), r.pickup.iso.replace( 'T', ' ' ), r.return ? r.return.iso.replace( 'T', ' ' ) : '', r.from, r.to, r.vias, r.distance_mi, r.return_route ? r.return_route.from : '', r.return_route ? r.return_route.to : '', r.price_text || 'Quote', r.payment && r.payment.paid ? 'Paid (' + r.payment.method + ')' : ( r.payment && r.payment.method !== 'driver' ? 'Awaiting ' + r.payment.method : 'Pay the driver' ), r.passengers, r.luggage, r.carry_on, customerName( r.customer ), r.customer.phone, r.customer.email, r.flight_no, r.company, r.vulnerable ? r.vulnerable.label : '', r.notes, r.created.iso.replace( 'T', ' ' ) ].map( csvCell ).join( ',' ) );
 			} );
 			var blob = new Blob( [ '﻿' + lines.join( '\r\n' ) ], { type: 'text/csv;charset=utf-8' } );
 			var a = el( 'a', { href: URL.createObjectURL( blob ), download: 'bookings-' + new Date().toISOString().slice( 0, 10 ) + '.csv' } );

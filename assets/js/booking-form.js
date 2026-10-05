@@ -138,7 +138,7 @@
 
 	function applyServiceFields() {
 		$$( '[data-sb-only]' ).forEach( function ( n ) { n.hidden = n.getAttribute( 'data-sb-only' ) !== state.service; } );
-		$( '[data-sb-submit]' ).textContent = service().quoteOnly ? 'Send quote request' : 'Confirm booking';
+		applyPayment();
 	}
 
 	// ── Route stops (pickup, vias, add-via button, drop-off) ────
@@ -888,6 +888,7 @@
 			if ( edit ) { edit.hidden = ! ( i < n ); }
 		} );
 
+		if ( n === MAX_STEP ) { applyPayment(); }
 		$( '[data-sb-back]' ).hidden = n === 1;
 		$( '[data-sb-next]' ).hidden = n === MAX_STEP;
 		$( '[data-sb-submit]' ).hidden = n !== MAX_STEP;
@@ -1026,6 +1027,37 @@
 		if ( state.step < MAX_STEP ) { goStep( state.step + 1 ); }
 	}
 
+	// ── Payment choice (step 3) ─────────────────────────────────
+
+	function payChoice() {
+		var r = form.querySelector( 'input[name="payment"]:checked' );
+		return r ? r.value : 'driver';
+	}
+
+	/** Offer the ways to pay that are switched on, and only for a booking with a fare. */
+	function applyPayment() {
+		var box = $( '[data-sb-pay]' );
+		var P = CFG.payments || {};
+		var online = !! ( P.stripe || P.paypal );
+		var priced = state.quote && ! state.quote.quote_only && state.quote.total_pence != null;
+		box.hidden = ! ( online && priced && ! service().quoteOnly );
+
+		$$( '[data-sb-pay-opt]' ).forEach( function ( o ) { o.hidden = ! P[ o.getAttribute( 'data-sb-pay-opt' ) ]; } );
+		var cur = form.querySelector( 'input[name="payment"]:checked' );
+		if ( ! cur || cur.closest( '[data-sb-pay-opt]' ).hidden ) {
+			var first = $$( '[data-sb-pay-opt]' ).filter( function ( o ) { return ! o.hidden; } )[ 0 ];
+			if ( first ) { $( 'input', first ).checked = true; }
+		}
+		$$( '[data-sb-pay-opt]' ).forEach( function ( o ) { o.classList.toggle( 'is-selected', $( 'input', o ).checked ); } );
+
+		var chosen = box.hidden ? 'driver' : payChoice();
+		var now = chosen !== 'driver';
+		$( '[data-sb-pay-note]' ).textContent = service().quoteOnly
+			? 'We will email you a price. You do not pay anything now.'
+			: ( now ? 'You will be taken to a secure page to pay ' + money( state.quote.total_pence ) + '. Your booking is saved first.' : 'You pay the driver at the end of the journey.' );
+		$( '[data-sb-submit]' ).textContent = service().quoteOnly ? 'Send quote request' : ( now ? 'Confirm and pay ' + money( state.quote.total_pence ) : 'Confirm booking' );
+	}
+
 	// ── Review (step 3) ─────────────────────────────────────────
 
 	function fmtDateTime( v ) {
@@ -1068,9 +1100,7 @@
 		}
 		box.appendChild( dl );
 
-		$( '[data-sb-pay-note]' ).textContent = service().quoteOnly
-			? 'We will email you a price. You do not pay anything now.'
-			: 'You pay the driver at the end of the journey.';
+		applyPayment();
 	}
 
 	// ── Submit ──────────────────────────────────────────────────
@@ -1098,14 +1128,22 @@
 		if ( mode === 'register' || mode === 'login' ) { body.password = val( 'password' ); }
 		body.carry_on = num( 'carry_on', 0 );
 		body.terms = form.elements.terms.checked;
+		body.payment = $( '[data-sb-pay]' ).hidden ? 'driver' : payChoice();
+		body.return_to = window.location.origin + window.location.pathname;
 		body.elapsed_ms = Date.now() - state.startedAt;
 
 		post( 'bookings', body ).then( function ( res ) {
 			form.elements.password.value = '';
+			if ( res.redirect ) {
+				// Booking saved. Off to Stripe or PayPal; they send the customer back here with the outcome.
+				btn.textContent = 'Taking you to secure payment…';
+				window.location.href = res.redirect;
+				return;
+			}
 			showDone( res );
 		} ).catch( function ( err ) {
 			btn.disabled = false;
-			btn.textContent = service().quoteOnly ? 'Send quote request' : 'Confirm booking';
+			applyPayment();
 			if ( err.code === 'sb_too_soon' ) { pickupTooSoon( err.data && err.data.earliest ); return; }
 			if ( err.code === 'sb_need_details' ) { state.needDetails = true; applyAccountMode(); }
 			showErrors( [ err.message ] );
@@ -1118,11 +1156,21 @@
 		done.appendChild( el( 'h2', { text: res.quote_only ? 'Quote request received' : 'Booking received' } ) );
 		done.appendChild( el( 'p', { text: 'Your reference' } ) );
 		done.appendChild( el( 'div', { 'class': 'sb-ref', text: res.reference } ) );
+		var links = res.pay_links || {};
+		var online = res.payment === 'stripe' || res.payment === 'paypal';
 		done.appendChild( el( 'p', { text: res.quote_only
 			? 'We will price this and email you shortly. Quote the reference above if you call.'
-			: 'We have emailed you the details. We will confirm your driver shortly, and you pay the driver at the end of the journey.' } ) );
+			: ( online
+				? 'We have emailed you the details. Your payment page did not open, so the booking is saved and unpaid. Use the buttons below to pay now, or pay the driver.'
+				: 'We have emailed you the details. We will confirm your driver shortly, and you pay the driver at the end of the journey.' ) } ) );
 		if ( ! res.quote_only && res.total_pence != null ) {
 			done.appendChild( el( 'p', { text: 'Fare: ' + money( res.total_pence ) } ) );
+		}
+		if ( ! res.quote_only && Object.keys( links ).length ) {
+			var row = el( 'div', { 'class': 'sb-paylinks' }, [ el( 'p', { 'class': 'sb-hint', text: online ? 'Pay now:' : 'Prefer to pay now instead of paying the driver?' } ) ] );
+			if ( links.stripe ) { row.appendChild( el( 'a', { 'class': 'sb-btn sb-btn--primary', href: links.stripe, text: 'Pay by card' } ) ); }
+			if ( links.paypal ) { row.appendChild( el( 'a', { 'class': 'sb-btn sb-btn--ghost', href: links.paypal, text: 'Pay with PayPal' } ) ); }
+			done.appendChild( row );
 		}
 		if ( res.registered ) {
 			done.appendChild( el( 'p', { text: 'Your account is ready and you are signed in, so you can see this booking any time.' } ) );
@@ -1191,6 +1239,7 @@
 			if ( ! this.checked ) { form.elements.vulnerable_type.value = ''; }
 		} );
 
+		$$( 'input[name="payment"]' ).forEach( function ( r ) { r.addEventListener( 'change', applyPayment ); } );
 		$$( 'input[name="account_mode"]' ).forEach( function ( r ) { r.addEventListener( 'change', applyAccountMode ); } );
 		if ( ! CFG.accounts ) { $$( '[data-sb-account-only]' ).forEach( function ( n ) { n.hidden = true; } ); }
 

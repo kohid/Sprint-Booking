@@ -614,3 +614,37 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 .sb-d-mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
 .sb-d-mini__item { padding: 0.75rem 0.9rem; border-radius: var(--d-radius); background: var(--d-page); }
 .sb-d-mini__value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: var(--d-ink); }
+
+
+/* Payments: one card per gateway, the mode in use is the one that stands out */
+.sb-ui-gw { margin: 1.25rem 0 0; padding: 1.25rem 1.25rem 0.5rem; border: 1px solid var(--d-line); border-radius: var(--d-radius); background: #fff; }
+.sb-ui-gw__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.25rem; }
+.sb-ui-gw__head h3 { margin: 0; padding: 0; font-size: 1.05rem; font-weight: 600; color: var(--d-ink); }
+.sb-ui-gw__mode { margin: 0.75rem 0; padding: 0.25rem 1rem 0.25rem; border-left: 3px solid var(--d-line2); opacity: 0.6; }
+.sb-ui-gw__mode.is-active { border-left-color: var(--d-red); opacity: 1; background: linear-gradient(90deg, var(--d-red-light), transparent 40%); }
+.sb-ui-gw__mode h4 { margin: 0.5rem 0 0.15rem; padding: 0; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--d-soft); }
+.sb-ui-gw__mode.is-active h4 { color: var(--d-red-dark); }
+.sb-ui-gw__clear { padding: 0.5rem 0 0.9rem; color: var(--d-muted); font-size: 0.9rem; }
+.sb-ui .notice.inline { margin: 0.5rem 0 1rem; }
+
+.sb-d-paid { margin: 0.6rem 0 0; color: var(--d-muted); }
+
+/* Demo data: one row per service that fills as its bookings are made */
+.sb-demo__state { margin: 0.25rem 0 1rem; font-weight: 600; color: var(--d-ink); min-height: 1.5em; }
+.sb-demo__list { margin: 0 0 1.25rem; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.sb-demo__row { display: grid; grid-template-columns: 14px minmax(9rem, 12rem) minmax(0, 1fr) minmax(5rem, 11rem); align-items: center; gap: 0.9rem; padding: 0.7rem 0.9rem; border: 1px solid var(--d-line); border-radius: var(--d-radius); background: #fff; }
+.sb-demo__dot { width: 12px; height: 12px; border-radius: 50%; border: 3px solid var(--d-line2); background: #fff; }
+.sb-demo__name { font-weight: 600; color: var(--d-ink); }
+.sb-demo__bar { display: block; height: 8px; border-radius: 999px; background: var(--d-line); overflow: hidden; }
+.sb-demo__fill { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--d-red); transition: width 0.4s ease; }
+.sb-demo__note { color: var(--d-muted); font-size: 0.88rem; text-align: right; }
+.sb-demo__row.is-done .sb-demo__dot { border-color: var(--d-red); background: var(--d-red); }
+.sb-demo__row.is-working { border-color: var(--d-red); background: var(--d-red-light); }
+.sb-demo__row.is-working .sb-demo__dot { border-color: var(--d-red); animation: sb-demo-pulse 1s ease-in-out infinite; }
+.sb-demo__row.is-error { border-color: #f1aeb3; background: #fff5f6; }
+.sb-demo__row.is-error .sb-demo__note { color: var(--d-red-dark); font-weight: 600; text-align: left; grid-column: 3 / -1; }
+.sb-demo__notes { margin: 1rem 0 0; padding-left: 1.2rem; color: var(--d-muted); display: grid; gap: 0.4rem; }
+.sb-d-demo { margin-left: 0.4rem; }
+@keyframes sb-demo-pulse { 50% { opacity: 0.25; } }
+@media (max-width: 700px) { .sb-demo__row { grid-template-columns: 14px minmax(0, 1fr); } .sb-demo__bar, .sb-demo__note { grid-column: 2; text-align: left; } }
+@media (prefers-reduced-motion: reduce) { .sb-demo__fill { transition: none; } .sb-demo__row.is-working .sb-demo__dot { animation: none; } }

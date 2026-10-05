@@ -7,7 +7,12 @@ function esc_html($s){return htmlspecialchars($s);} function esc_attr($s){return
 function checked($a,$b){return $a===$b?'checked':'';}
 function esc_url($s){return htmlspecialchars($s);}
 function selected($a,$b){return $a===$b?'selected':'';}
-$GLOBALS['as_user'] = ( $argv[1] ?? '' ) === 'user';
+$GLOBALS['as_user'] = in_array( 'user', $argv, true );
+$GLOBALS['with_pay'] = in_array( 'pay', $argv, true );
+foreach ( $argv as $a ) { if ( str_starts_with( $a, 'q=' ) ) { parse_str( substr( $a, 2 ), $_GET ); } }
+function sanitize_key($s){return preg_replace('/[^a-z0-9_\-]/','',strtolower((string)$s));}
+function sanitize_text_field($s){return trim(strip_tags((string)$s));}
+function wp_unslash($s){return $s;}
 function is_user_logged_in(){return $GLOBALS['as_user'];}
 function wp_get_current_user(){return (object)['display_name'=>'Sam Customer'];}
 function wp_logout_url($r=''){return '/logout';}
@@ -26,6 +31,7 @@ $cfg = [
   'airport'=>['label'=>'Airport Transfer','quoteOnly'=>false,'minibusOnly'=>false],'corporate'=>['label'=>'Corporate Service','quoteOnly'=>false,'minibusOnly'=>false],
   'golf'=>['label'=>'Golf Transfer','quoteOnly'=>false,'minibusOnly'=>false],'wedding'=>['label'=>'Wedding Cars','quoteOnly'=>true,'minibusOnly'=>false],
   'minibus'=>['label'=>'Minibus Service','quoteOnly'=>false,'minibusOnly'=>true],'tours'=>['label'=>'Inverness Tours','quoteOnly'=>true,'minibusOnly'=>false]],
+ 'payments'=>$GLOBALS['with_pay'] ? ['driver'=>true,'stripe'=>true,'paypal'=>true] : ['driver'=>true,'stripe'=>false,'paypal'=>false],
  'accounts'=>true,'user'=>$GLOBALS['as_user'] ? ['name'=>'Sam Customer','email'=>'sam@example.com','phone'=>'07700 900555'] : null,'nonce'=>$GLOBALS['as_user'] ? 'abc123' : '',
  'vehicles'=>[
   'saloon'=>['label'=>'Saloon','capacity'=>4,'bags'=>2,'minibus'=>false,'type'=>'saloon','image'=>''],

@@ -120,6 +120,7 @@ final class Voice {
 				'greeting'         => $cfg['voice']['greeting'],
 				'operator_number'  => $cfg['voice']['operator_number'],
 				'blocked'          => $blocked,
+				'payment_options'  => Payments::available(),
 				'services'         => $services,
 				'vehicles'         => $vehicles,
 				'min_lead_minutes' => (int) $cfg['min_lead_minutes'],
@@ -206,6 +207,9 @@ final class Voice {
 			'notes'             => $notes,
 			// The agent reads the terms to the caller; the chat shows them.
 			'terms'             => 1,
+			// Paying the driver is the default. "stripe" or "paypal" books and returns a secure link to pay now.
+			'payment'           => $in['payment'] ?? 'driver',
+			'return_to'         => $in['return_to'] ?? '',
 		);
 
 		$req = new \WP_REST_Request( 'POST', '/' . Rest::NS . '/bookings' );
@@ -218,9 +222,12 @@ final class Voice {
 		}
 		$data = (array) $res->get_data();
 		Calls::log( 'booked', $source, (string) $data['reference'], (string) ( $in['caller_number'] ?? '' ) );
+		$online = ! empty( (array) $data['pay_links'] );
 		$data['message'] = null === $data['total_pence']
 			? sprintf( /* translators: %s: booking reference */ __( 'Quote request %s received. We will price it and email the customer.', 'sprint-booking' ), $data['reference'] )
-			: sprintf( /* translators: 1: reference, 2: fare */ __( 'Booking %1$s received. The fare is %2$s, paid to the driver. A confirmation email is on its way.', 'sprint-booking' ), $data['reference'], Settings::money( (int) $data['total_pence'] ) );
+			: ( in_array( $data['payment'], PaymentRules::GATEWAYS, true )
+				? sprintf( /* translators: 1: reference, 2: fare */ __( 'Booking %1$s received. The fare is %2$s. Use the secure link to pay now; it is also in the confirmation email.', 'sprint-booking' ), $data['reference'], Settings::money( (int) $data['total_pence'] ) )
+				: sprintf( /* translators: 1: reference, 2: fare */ __( 'Booking %1$s received. The fare is %2$s, paid to the driver.%3$s A confirmation email is on its way.', 'sprint-booking' ), $data['reference'], Settings::money( (int) $data['total_pence'] ), $online ? ' ' . __( 'The email also has a link to pay online instead.', 'sprint-booking' ) : '' ) );
 		return rest_ensure_response( $data );
 	}
 

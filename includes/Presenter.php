@@ -77,6 +77,13 @@ final class Presenter {
 			'notes'        => (string) ( $r['notes'] ?? '' ),
 			'vulnerable'   => '' !== $vtype ? array( 'key' => $vtype, 'label' => (string) ( Rest::VULNERABLE_TYPES[ $vtype ] ?? $vtype ) ) : null,
 			'source'       => (string) ( $r['source'] ?? 'web' ),
+			'payment'      => array(
+				'method' => (string) ( $r['payment_method'] ?? 'driver' ),
+				'status' => (string) ( $r['payment_status'] ?? 'unpaid' ),
+				'ref'    => (string) ( $r['payment_ref'] ?? '' ),
+				'paid'   => 'paid' === ( $r['payment_status'] ?? '' ),
+				'paid_text' => isset( $r['paid_pence'] ) && null !== $r['paid_pence'] ? $symbol . number_format( (int) $r['paid_pence'] / 100, 2 ) : null,
+			),
 			'created'      => self::when( (string) ( $r['created_at'] ?? '' ), $tz, $now ),
 		);
 	}

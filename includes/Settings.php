@@ -38,6 +38,12 @@ final class Settings {
 			'allow_accounts'          => true,
 			'geocoder_provider'       => 'photon',
 			'google_api_key'          => '',
+			'payments'                => array(
+				'allow_driver' => true,
+				'currency'     => 'GBP',
+				'stripe'       => array( 'enabled' => false, 'sandbox' => true, 'test_secret' => '', 'live_secret' => '', 'test_whsec' => '', 'live_whsec' => '' ),
+				'paypal'       => array( 'enabled' => false, 'sandbox' => true, 'sandbox_id' => '', 'sandbox_secret' => '', 'live_id' => '', 'live_secret' => '' ),
+			),
 			'dashboard_roles'         => array( 'sb_dispatcher' ),
 			'voice'                   => array(
 				'enabled'          => false,
@@ -113,6 +119,7 @@ final class Settings {
 		$new_key                  = mb_substr( preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) ( $in['google_api_key'] ?? '' ) ) ?? '', 0, 80 );
 		// A blank box keeps the saved key; the tick box removes it.
 		$out['google_api_key']    = ! empty( $in['google_api_key_clear'] ) ? '' : ( '' !== $new_key ? $new_key : $stored_key );
+		$out['payments'] = self::sanitize_payments( (array) ( $in['payments'] ?? array() ), $d['payments'] );
 		$out['dashboard_roles'] = Roles::clean( $in['dashboard_roles'] ?? array(), array_keys( wp_roles()->get_names() ) );
 		$v      = (array) ( $in['voice'] ?? array() );
 		$out['voice'] = array(
@@ -142,5 +149,36 @@ final class Settings {
 	public static function money( int $pence, ?string $symbol = null ): string {
 		$symbol = $symbol ?? self::get()['currency_symbol'];
 		return $symbol . number_format( $pence / 100, 2 );
+	}
+
+	/** Secret fields: a blank box keeps what is saved; a tick box removes it. Never taken from anywhere but the form. */
+	private static function sanitize_payments( array $in, array $d ): array {
+		$stored = get_option( self::OPTION, array() );
+		$old    = is_array( $stored ) && is_array( $stored['payments'] ?? null ) ? $stored['payments'] : array();
+		$secret = static function ( string $gateway, string $field, array $in, array $old, bool $clear ): string {
+			if ( $clear ) {
+				return '';
+			}
+			$new = mb_substr( preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) ( $in[ $gateway ][ $field ] ?? '' ) ) ?? '', 0, 200 );
+			return '' !== $new ? $new : (string) ( $old[ $gateway ][ $field ] ?? '' );
+		};
+
+		$out = $d;
+		$out['allow_driver'] = ! empty( $in['allow_driver'] );
+		$out['currency']     = in_array( $in['currency'] ?? '', array( 'GBP', 'EUR', 'USD' ), true ) ? $in['currency'] : 'GBP';
+
+		$clear_stripe          = ! empty( $in['stripe']['clear'] );
+		$out['stripe']['enabled'] = ! empty( $in['stripe']['enabled'] );
+		$out['stripe']['sandbox'] = ! empty( $in['stripe']['sandbox'] );
+		foreach ( array( 'test_secret', 'live_secret', 'test_whsec', 'live_whsec' ) as $f ) {
+			$out['stripe'][ $f ] = $secret( 'stripe', $f, $in, $old, $clear_stripe );
+		}
+		$clear_paypal          = ! empty( $in['paypal']['clear'] );
+		$out['paypal']['enabled'] = ! empty( $in['paypal']['enabled'] );
+		$out['paypal']['sandbox'] = ! empty( $in['paypal']['sandbox'] );
+		foreach ( array( 'sandbox_id', 'sandbox_secret', 'live_id', 'live_secret' ) as $f ) {
+			$out['paypal'][ $f ] = $secret( 'paypal', $f, $in, $old, $clear_paypal );
+		}
+		return $out;
 	}
 }

@@ -19,6 +19,7 @@ final class Admin {
 	public static function init(): void {
 		add_action( 'admin_menu', array( self::class, 'menu' ) );
 		add_action( 'admin_init', array( self::class, 'register_settings' ) );
+		add_action( 'admin_post_sb_pay_test', array( self::class, 'handle_pay_test' ) );
 		add_action( 'admin_post_sb_voice_secret', array( self::class, 'handle_voice_secret' ) );
 		add_action( 'admin_post_sb_test_email', array( self::class, 'handle_test_email' ) );
 		add_action( 'admin_post_sb_create_dashboard', array( self::class, 'handle_create_dashboard' ) );
@@ -49,6 +50,25 @@ final class Admin {
 			ChatBooking::enqueue( 'staff' );
 		}
 		if ( false !== strpos( $hook, 'sb-settings' ) ) {
+			wp_enqueue_script( 'sb-demo', SB_URL . 'assets/js/demo.js', array(), $v( 'assets/js/demo.js' ), true );
+			$svc = array();
+			foreach ( Settings::get()['services'] as $key => $sv ) {
+				$svc[] = array( 'key' => $key, 'label' => $sv['label'] );
+			}
+			wp_add_inline_script(
+				'sb-demo',
+				'window.SB_DEMO = ' . wp_json_encode(
+					array(
+						'rest'     => esc_url_raw( rest_url( Rest::NS . '/' ) ),
+						'nonce'    => wp_create_nonce( 'wp_rest' ),
+						'per'      => DemoPlan::PER_SERVICE,
+						'services' => $svc,
+						'counts'   => (object) Demo::counts(),
+					),
+					JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+				) . ';',
+				'before'
+			);
 			wp_enqueue_media();
 			wp_enqueue_script( 'sb-admin-settings', SB_URL . 'assets/js/admin-settings.js', array( 'jquery' ), $v( 'assets/js/admin-settings.js' ), true );
 		}
@@ -170,6 +190,20 @@ final class Admin {
 		exit;
 	}
 
+	// ── Payments ──────────────────────────────────────────────────
+
+	public static function handle_pay_test(): void {
+		if ( ! current_user_can( self::SETTINGS_CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'sprint-booking' ), 403 );
+		}
+		check_admin_referer( 'sb_pay_test' );
+		$gateway = isset( $_POST['gateway'] ) && 'paypal' === $_POST['gateway'] ? 'paypal' : 'stripe';
+		$res     = Payments::test_connection( $gateway );
+		set_transient( 'sb_paytest_' . get_current_user_id(), array( 'ok' => ! is_wp_error( $res ), 'gateway' => $gateway, 'message' => is_wp_error( $res ) ? $res->get_error_message() : $res ), 120 );
+		wp_safe_redirect( admin_url( 'admin.php?page=sb-settings#payments' ) );
+		exit;
+	}
+
 	// ── Phone agent ───────────────────────────────────────────────
 
 	public static function handle_voice_secret(): void {
@@ -268,9 +302,11 @@ final class Admin {
 			'rules'      => __( 'Booking rules', 'sprint-booking' ),
 			'cars'       => __( 'Cars', 'sprint-booking' ),
 			'services'   => __( 'Services', 'sprint-booking' ),
+			'payments'   => __( 'Payments', 'sprint-booking' ),
 			'voice'      => __( 'Phone agent', 'sprint-booking' ),
 			'email'      => __( 'Email', 'sprint-booking' ),
 			'shortcodes' => __( 'Shortcodes', 'sprint-booking' ),
+			'demo'       => __( 'Demo', 'sprint-booking' ),
 		);
 		echo '<div class="sb-ui-layout"><div class="sb-ui-tabs" role="tablist" aria-label="' . esc_attr__( 'Settings sections', 'sprint-booking' ) . '">';
 		foreach ( $tabs as $key => $label ) {
@@ -355,6 +391,8 @@ final class Admin {
 		echo '</tbody></table>';
 		$panel_close();
 
+		self::payments_form_panel( $c, $name, $row, $panel_open, $panel_close );
+
 		$v = $c['voice'];
 		$panel_open( 'voice', __( 'Phone agent', 'sprint-booking' ), __( 'Settings for taking bookings by phone. Callers reach an ElevenLabs agent through a Twilio number; the agent books through this plugin.', 'sprint-booking' ) );
 		$row( 'sb-voice-on', __( 'Phone agent', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-voice-on" type="checkbox" name="' . esc_attr( $name ) . '[voice][enabled]" value="1"' . checked( ! empty( $v['enabled'] ), true, false ) . '> ' . esc_html__( 'Accept bookings from the phone agent', 'sprint-booking' ) . '</label>', __( 'While this is off, the agent endpoints refuse every request.', 'sprint-booking' ) );
@@ -369,6 +407,8 @@ final class Admin {
 		echo '</form>';
 
 		// Outside the settings form: each button here posts on its own.
+		self::payments_status_panel( $panel_open, $panel_close );
+		self::demo_panel( $c, $panel_open, $panel_close );
 		self::voice_connection_panel( $panel_open, $panel_close );
 		self::email_panel( $panel_open, $panel_close );
 
@@ -383,6 +423,107 @@ final class Admin {
 	}
 
 	/** Numbered route from "no phone line" to "calls become bookings". Done steps are filled in. */
+	/** Settings → Demo: fill the dashboard with clearly fake bookings, and remove them again. */
+	private static function demo_panel( array $c, callable $open, callable $close ): void {
+		$per   = DemoPlan::PER_SERVICE;
+		$count = count( $c['services'] );
+		$open( 'demo', __( 'Demo data', 'sprint-booking' ), sprintf( /* translators: 1: bookings per service, 2: services, 3: total */ __( 'Fill the dashboard with %1$d bookings for each of the %2$d services (%3$d in all), so you can see how the charts, run sheet and reports look.', 'sprint-booking' ), $per, $count, $per * $count ) );
+		echo '<div class="sb-demo" data-sb-demo>';
+		echo '<p class="sb-demo__state" data-sb-demo-state aria-live="polite"></p>';
+		echo '<ol class="sb-demo__list" data-sb-demo-list></ol>';
+		echo '<div class="sb-ui-sc__code"><button type="button" class="sb-d-btn sb-d-btn--primary" data-sb-demo-go>' . esc_html( sprintf( /* translators: %d: total */ __( 'Generate %d demo bookings', 'sprint-booking' ), $per * $count ) ) . '</button><button type="button" class="sb-d-btn sb-d-btn--light" data-sb-demo-delete>' . esc_html__( 'Delete demo data', 'sprint-booking' ) . '</button><a class="sb-d-btn sb-d-btn--light" href="' . esc_url( admin_url( 'admin.php?page=sb-dashboard' ) ) . '" style="text-decoration:none">' . esc_html__( 'Open the dashboard', 'sprint-booking' ) . '</a></div>';
+		echo '<ul class="sb-demo__notes">';
+		foreach ( array(
+			__( 'They are real rows in your bookings table, priced with your current tariff and routed with your routing service. If that service is busy, distances are estimated and marked as such.', 'sprint-booking' ),
+			__( 'The customers are made up: names that are not real people, phone numbers from the range reserved for fiction (07700 900xxx) and example.com emails. Nothing is emailed and no payment is taken.', 'sprint-booking' ),
+			__( 'They count in the dashboard figures (revenue, bookings per day) and carry a Demo badge. Delete them here before you go live. Only demo bookings are ever deleted.', 'sprint-booking' ),
+		) as $note ) {
+			echo '<li>' . esc_html( $note ) . '</li>';
+		}
+		echo '</ul></div>';
+		$close();
+	}
+
+	/** One secret field: never shows the saved value, only that one exists and its last four characters. */
+	private static function secret_input( string $id, string $label, string $name, string $saved, string $prefix_hint, string $help = '' ): string {
+		$ph = '' !== $saved ? '•••• ' . substr( $saved, -4 ) . ' ' . __( '(saved, type to replace)', 'sprint-booking' ) : $prefix_hint;
+		return '<div class="sb-ui-row"><label for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label><div><input id="' . esc_attr( $id ) . '" class="sb-ui-input" type="password" autocomplete="new-password" spellcheck="false" name="' . esc_attr( $name ) . '" value="" placeholder="' . esc_attr( $ph ) . '">' . ( $help ? '<p class="sb-ui-help">' . esc_html( $help ) . '</p>' : '' ) . '</div></div>';
+	}
+
+	private static function payments_form_panel( array $c, string $name, callable $row, callable $open, callable $close ): void {
+		$p   = $c['payments'];
+		$ok  = Payments::available();
+		$n   = $name . '[payments]';
+		$ext = static fn( string $url, string $label ): string => '<a class="sb-ui-link" href="' . esc_url( $url ) . '" target="_blank" rel="noopener noreferrer">' . esc_html( $label ) . ' <span aria-hidden="true">↗</span></a>';
+		$state = static function ( bool $enabled, bool $ready, bool $sandbox ): string {
+			if ( ! $enabled ) {
+				return '<span class="sb-d-badge sb-d-badge--muted">' . esc_html__( 'Off', 'sprint-booking' ) . '</span>';
+			}
+			$mode = $sandbox ? '<span class="sb-d-badge sb-d-badge--warning">' . esc_html__( 'Sandbox', 'sprint-booking' ) . '</span>' : '<span class="sb-d-badge sb-d-badge--primary">' . esc_html__( 'Live', 'sprint-booking' ) . '</span>';
+			return ( $ready ? '<span class="sb-d-badge sb-d-badge--success">' . esc_html__( 'Ready', 'sprint-booking' ) . '</span> ' : '<span class="sb-d-badge sb-d-badge--warning">' . esc_html__( 'Keys missing or wrong', 'sprint-booking' ) . '</span> ' ) . $mode;
+		};
+
+		$open( 'payments', __( 'Payments', 'sprint-booking' ), __( 'Let customers pay online as well as paying the driver. They pay on Stripe\'s or PayPal\'s own page, so card details never reach this site. Try everything in sandbox first.', 'sprint-booking' ) );
+
+		$row( 'sb-pay-driver', __( 'Pay the driver', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-pay-driver" type="checkbox" name="' . esc_attr( $n ) . '[allow_driver]" value="1"' . checked( ! empty( $p['allow_driver'] ), true, false ) . '> ' . esc_html__( 'Customers may choose to pay the driver at the end', 'sprint-booking' ) . '</label>', __( 'Untick to make customers pay online. It stays available if no online method is ready, so nobody is locked out of booking.', 'sprint-booking' ) );
+		$row( 'sb-pay-cur', __( 'Currency', 'sprint-booking' ), '<select id="sb-pay-cur" class="sb-ui-input sb-ui-input--short" name="' . esc_attr( $n ) . '[currency]">' . implode( '', array_map( static fn( $cur ) => '<option' . selected( $p['currency'], $cur, false ) . '>' . esc_html( $cur ) . '</option>', array( 'GBP', 'EUR', 'USD' ) ) ) . '</select>', __( 'Fares are set in the currency symbol under Fares. Keep both the same.', 'sprint-booking' ) );
+
+		// Stripe
+		echo '<div class="sb-ui-gw"><div class="sb-ui-gw__head"><h3>Stripe</h3>' . $state( ! empty( $p['stripe']['enabled'] ), $ok['stripe'], ! empty( $p['stripe']['sandbox'] ) ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built from escaped parts.
+		$row( 'sb-st-on', __( 'Stripe', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-st-on" type="checkbox" name="' . esc_attr( $n ) . '[stripe][enabled]" value="1"' . checked( ! empty( $p['stripe']['enabled'] ), true, false ) . '> ' . esc_html__( 'Offer card payment with Stripe', 'sprint-booking' ) . '</label>' );
+		$row( 'sb-st-sb', __( 'Mode', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-st-sb" type="checkbox" name="' . esc_attr( $n ) . '[stripe][sandbox]" value="1"' . checked( ! empty( $p['stripe']['sandbox'] ), true, false ) . '> ' . esc_html__( 'Sandbox mode (test keys, no real money)', 'sprint-booking' ) . '</label>', __( 'Untick only when you are ready to take real payments, with live keys.', 'sprint-booking' ) );
+		echo '<div class="sb-ui-gw__mode' . ( ! empty( $p['stripe']['sandbox'] ) ? ' is-active' : '' ) . '"><h4>' . esc_html__( 'Sandbox keys', 'sprint-booking' ) . '</h4><p class="sb-ui-links">' . $ext( 'https://dashboard.stripe.com/test/apikeys', __( 'Get your test secret key', 'sprint-booking' ) ) . $ext( 'https://dashboard.stripe.com/test/webhooks', __( 'Add the test webhook', 'sprint-booking' ) ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-st-ts', __( 'Test secret key', 'sprint-booking' ), $n . '[stripe][test_secret]', (string) $p['stripe']['test_secret'], 'sk_test_…', __( 'Starts sk_test_. A restricted key (rk_test_) with Checkout Sessions write access also works.', 'sprint-booking' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-st-tw', __( 'Test webhook signing secret', 'sprint-booking' ), $n . '[stripe][test_whsec]', (string) $p['stripe']['test_whsec'], 'whsec_…' ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '</div><div class="sb-ui-gw__mode' . ( empty( $p['stripe']['sandbox'] ) ? ' is-active' : '' ) . '"><h4>' . esc_html__( 'Live keys', 'sprint-booking' ) . '</h4><p class="sb-ui-links">' . $ext( 'https://dashboard.stripe.com/apikeys', __( 'Get your live secret key', 'sprint-booking' ) ) . $ext( 'https://dashboard.stripe.com/webhooks', __( 'Add the live webhook', 'sprint-booking' ) ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-st-ls', __( 'Live secret key', 'sprint-booking' ), $n . '[stripe][live_secret]', (string) $p['stripe']['live_secret'], 'sk_live_…', __( 'Starts sk_live_.', 'sprint-booking' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-st-lw', __( 'Live webhook signing secret', 'sprint-booking' ), $n . '[stripe][live_whsec]', (string) $p['stripe']['live_whsec'], 'whsec_…' ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '</div><label class="sb-ui-check sb-ui-gw__clear"><input type="checkbox" name="' . esc_attr( $n ) . '[stripe][clear]" value="1"> ' . esc_html__( 'Remove all saved Stripe keys', 'sprint-booking' ) . '</label></div>';
+
+		// PayPal
+		echo '<div class="sb-ui-gw"><div class="sb-ui-gw__head"><h3>PayPal</h3>' . $state( ! empty( $p['paypal']['enabled'] ), $ok['paypal'], ! empty( $p['paypal']['sandbox'] ) ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		$row( 'sb-pp-on', __( 'PayPal', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-pp-on" type="checkbox" name="' . esc_attr( $n ) . '[paypal][enabled]" value="1"' . checked( ! empty( $p['paypal']['enabled'] ), true, false ) . '> ' . esc_html__( 'Offer PayPal', 'sprint-booking' ) . '</label>' );
+		$row( 'sb-pp-sb', __( 'Mode', 'sprint-booking' ), '<label class="sb-ui-check"><input id="sb-pp-sb" type="checkbox" name="' . esc_attr( $n ) . '[paypal][sandbox]" value="1"' . checked( ! empty( $p['paypal']['sandbox'] ), true, false ) . '> ' . esc_html__( 'Sandbox mode (test accounts, no real money)', 'sprint-booking' ) . '</label>', __( 'Untick only when you are ready to take real payments, with live credentials.', 'sprint-booking' ) );
+		echo '<div class="sb-ui-gw__mode' . ( ! empty( $p['paypal']['sandbox'] ) ? ' is-active' : '' ) . '"><h4>' . esc_html__( 'Sandbox app', 'sprint-booking' ) . '</h4><p class="sb-ui-links">' . $ext( 'https://developer.paypal.com/dashboard/applications/sandbox', __( 'Create a sandbox app and copy its credentials', 'sprint-booking' ) ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-pp-si', __( 'Sandbox client ID', 'sprint-booking' ), $n . '[paypal][sandbox_id]', (string) $p['paypal']['sandbox_id'], __( 'Client ID', 'sprint-booking' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-pp-ss', __( 'Sandbox secret', 'sprint-booking' ), $n . '[paypal][sandbox_secret]', (string) $p['paypal']['sandbox_secret'], __( 'Secret', 'sprint-booking' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '</div><div class="sb-ui-gw__mode' . ( empty( $p['paypal']['sandbox'] ) ? ' is-active' : '' ) . '"><h4>' . esc_html__( 'Live app', 'sprint-booking' ) . '</h4><p class="sb-ui-links">' . $ext( 'https://developer.paypal.com/dashboard/applications/live', __( 'Create a live app and copy its credentials', 'sprint-booking' ) ) . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-pp-li', __( 'Live client ID', 'sprint-booking' ), $n . '[paypal][live_id]', (string) $p['paypal']['live_id'], __( 'Client ID', 'sprint-booking' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo self::secret_input( 'sb-pp-ls', __( 'Live secret', 'sprint-booking' ), $n . '[paypal][live_secret]', (string) $p['paypal']['live_secret'], __( 'Secret', 'sprint-booking' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '</div><label class="sb-ui-check sb-ui-gw__clear"><input type="checkbox" name="' . esc_attr( $n ) . '[paypal][clear]" value="1"> ' . esc_html__( 'Remove all saved PayPal credentials', 'sprint-booking' ) . '</label></div>';
+		$close();
+	}
+
+	/** Outside the settings form: test buttons, the webhook address Stripe needs, and the last error. */
+	private static function payments_status_panel( callable $open, callable $close ): void {
+		$open( 'payments', __( 'Check the connection', 'sprint-booking' ), __( 'Save your keys first, then test them. A test never charges anything.', 'sprint-booking' ) );
+
+		$key  = 'sb_paytest_' . get_current_user_id();
+		$test = get_transient( $key );
+		if ( is_array( $test ) ) {
+			delete_transient( $key );
+			echo '<div class="notice notice-' . ( $test['ok'] ? 'success' : 'error' ) . ' inline"><p><strong>' . esc_html( 'paypal' === $test['gateway'] ? 'PayPal' : 'Stripe' ) . ':</strong> ' . esc_html( (string) $test['message'] ) . '</p></div>';
+		}
+
+		echo '<div class="sb-ui-sc__code" style="margin:0.5rem 0 1rem">';
+		foreach ( array( 'stripe' => 'Stripe', 'paypal' => 'PayPal' ) as $g => $label ) {
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+			wp_nonce_field( 'sb_pay_test' );
+			echo '<input type="hidden" name="action" value="sb_pay_test"><input type="hidden" name="gateway" value="' . esc_attr( $g ) . '"><button class="sb-d-btn sb-d-btn--light">' . esc_html( sprintf( /* translators: %s: Stripe or PayPal */ __( 'Test %s connection', 'sprint-booking' ), $label ) ) . '</button></form>';
+		}
+		echo '</div>';
+
+		$hook = esc_url_raw( rest_url( Rest::NS . '/pay/stripe-webhook' ) );
+		echo '<dl class="sb-ui-endpoints"><div><dt>' . esc_html__( 'Stripe webhook', 'sprint-booking' ) . '</dt><dd><code>' . esc_html( $hook ) . '</code> <button type="button" class="button-link" data-sb-copy="' . esc_attr( $hook ) . '">' . esc_html__( 'Copy', 'sprint-booking' ) . '</button><br><span class="sb-ui-help">' . esc_html__( 'In Stripe, add this as a webhook endpoint for checkout.session.completed and checkout.session.async_payment_succeeded, then paste its signing secret above. Payments are also confirmed when the customer returns to your site, but the webhook catches the ones who close the tab.', 'sprint-booking' ) . '</span></dd></div>';
+		echo '<div><dt>PayPal</dt><dd><span class="sb-ui-help">' . esc_html__( 'No webhook needed: the payment is captured and checked when the customer returns to your site.', 'sprint-booking' ) . '</span></dd></div></dl>';
+
+		$last = get_option( Payments::ERROR_OPTION );
+		if ( is_array( $last ) ) {
+			echo '<p class="sb-ui-help"><strong>' . esc_html__( 'Last problem reported:', 'sprint-booking' ) . '</strong> ' . esc_html( wp_date( 'D j M, H:i', (int) $last['time'] ) . ', ' . $last['gateway'] . ': ' . $last['message'] ) . '</p>';
+		}
+		$close();
+	}
+
 	private static function voice_setup_panel( array $c, callable $open, callable $close ): void {
 		$v      = $c['voice'];
 		$rest   = esc_url_raw( rest_url( Rest::NS . '/' ) );
@@ -394,7 +535,7 @@ final class Admin {
 		$prompt   = "You are the booking assistant for " . get_bloginfo( 'name' ) . ", a taxi firm in Inverness, Scotland. Be brief and friendly.\n\n"
 			. "1. At the start of every call, call the config tool with the caller's number. If blocked is true, say you cannot take bookings on this number and end the call. Otherwise say the greeting it returns.\n"
 			. "2. Offer: a taxi as soon as possible, a taxi for later, cancel a booking, change a booking time, or speak to a person.\n"
-			. "3. To book, collect: service (" . $services . "), pickup, drop-off and any stops on the way, date and time (earliest is earliest_pickup from config; for \"now\" use that time), number of passengers, number of suitcases, car (" . $vehicles . "), whether a pet is travelling, name, mobile number, and email address. Ask the caller to spell the email and read it back. Read the whole booking back and wait for a yes before calling the booking tool.\n"
+			. "3. To book, collect: service (" . $services . "), pickup, drop-off and any stops on the way, date and time (earliest is earliest_pickup from config; for \"now\" use that time), number of passengers, number of suitcases, car (" . $vehicles . "), whether a pet is travelling, name, mobile number, and email address. Ask the caller to spell the email and read it back. Read the whole booking back and wait for a yes before calling the booking tool. Then ask how they would like to pay: the driver, or now by card or PayPal (config payment_options says which are on). Send payment as driver, stripe or paypal. If they pay online, tell them a secure payment link is in their confirmation email. Never take card numbers yourself.\n"
 			. "4. Never make up a price. Say the fare from the booking tool's reply, and that it is paid to the driver. If the tool returns an error, read its message to the caller and fix the answer.\n"
 			. "5. To cancel or change a booking, ask for the booking reference and the email it was made with, then call the manage tool.\n"
 			. "6. If the caller asks for a person, prefers not to use the assistant, or you cannot understand them after two tries, call the events tool with outcome transferred (or bypass if they just do not want the assistant), then transfer the call to " . ( '' !== $v['operator_number'] ? $v['operator_number'] : '[set the operator number in the plugin settings]' ) . ".";

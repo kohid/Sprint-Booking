@@ -111,6 +111,7 @@ final class Shortcode {
 		$config = array(
 			'rest'        => esc_url_raw( rest_url( Rest::NS . '/' ) ),
 			'accounts'    => (bool) $cfg['allow_accounts'],
+			'payments'    => Payments::available(),
 			'user'        => $user,
 			'nonce'       => $user ? wp_create_nonce( 'wp_rest' ) : '',
 			'symbol'      => $cfg['currency_symbol'],

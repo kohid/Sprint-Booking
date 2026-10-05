@@ -136,6 +136,11 @@ t( 'own-route return distance is in miles', 10.0 === $own['return_route']['dista
 t( 'a return on the same route has no return_route', null === $bare['return_route'] );
 t( 'broken return stops are ignored', null === Presenter::row( array( 'id' => 3, 'status' => 'new', 'stops' => '[]', 'return_stops' => 'nope', 'pickup_at' => '2026-12-25 09:00:00' ), $cfg, $tz, $now )['return_route'] );
 
+// ── Payment on a booking row ──
+$paid = Presenter::row( array( 'id' => 4, 'status' => 'new', 'stops' => '[]', 'pickup_at' => '2026-12-25 09:00:00', 'price_pence' => 4500, 'payment_method' => 'stripe', 'payment_status' => 'paid', 'payment_ref' => 'cs_test_1', 'paid_pence' => 4500 ), $cfg, $tz, $now );
+t( 'a paid booking says so', true === $paid['payment']['paid'] && 'stripe' === $paid['payment']['method'] && '£45.00' === $paid['payment']['paid_text'] && 'cs_test_1' === $paid['payment']['ref'] );
+t( 'a booking with no payment columns is unpaid, pay the driver', false === $bare['payment']['paid'] && 'driver' === $bare['payment']['method'] && 'unpaid' === $bare['payment']['status'] && null === $bare['payment']['paid_text'] );
+
 // ── Finding the page that holds each dashboard view (plain content and Elementor JSON) ──
 use SprintBooking\Dashboard;
 t( 'bare shortcode means overview', 'overview' === Dashboard::view_in( 'Hi [sprint_dashboard] there' ) );

@@ -47,6 +47,7 @@ for (let i = 0; i < 34; i++) {
     customer: { title: i % 3 === 0 ? 'Dr' : '', name: fn + ' ' + ln, phone: '07700 90' + String(1000 + i).slice(1), email: fn.toLowerCase() + '@example.com', account: i % 4 === 0 },
     flight_no: i % 3 === 0 ? 'BA' + (1200 + i) : '', company: '', notes: i === 3 ? '=HYPERLINK("http://example.com","Click")' : (i % 6 === 0 ? 'Two child seats please' : ''),
     vulnerable: i === 2 ? { key: 'senior', label: 'Senior citizen' } : null, created: when(made),
+    payment: price !== null && i % 3 === 1 ? { method: 'stripe', status: 'paid', ref: 'cs_test_' + i, paid: true, paid_text: '£' + (price / 100).toFixed(2) } : (price !== null && i % 7 === 2 ? { method: 'paypal', status: 'pending', ref: 'ORD' + i, paid: false, paid_text: null } : { method: 'driver', status: 'unpaid', ref: '', paid: false, paid_text: null }),
   });
 }
 rows.find(r => r.id === 103).customer.name = 'Euan, "Wee" Ross'; // a name that needs CSV escaping
@@ -139,11 +140,17 @@ async function findRef(page, ref) {
   assert.strictEqual((await page.locator('.sb-d-mini__value').allTextContents()).join(','), '7,4,1,0,2,1,0', 'today numbers');
   assert.strictEqual(await page.locator('.sb-d-mini ~ .sb-d-tablewrap tbody tr').count(), 7, 'seven days listed');
 
+  // ── Payment status shows beside the fare ──
+  await page.click('.sb-d-nav__item >> text=Bookings'); await page.waitForSelector('.sb-d-table');
+  assert(await page.locator('.sb-d-table .sb-d-badge', { hasText: /^Paid$/ }).count() > 0, 'paid bookings are badged');
+  assert(await page.locator('.sb-d-table .sb-d-badge', { hasText: 'Awaiting payment' }).count() > 0, 'online payments not yet confirmed are badged');
+  await page.click('.sb-d-nav__item >> text=Overview'); await page.waitForSelector('.sb-d-kpi');
+
   // ── Needs action tile jumps to the filtered list ──
   await page.click('.sb-d-kpi--link');
   await page.waitForSelector('.sb-d-table');
   assert.strictEqual(await page.inputValue('select[aria-label=Status]'), 'needs_action', 'status filter preset');
-  const badges = await page.locator('.sb-d-table .sb-d-badge').allTextContents();
+  const badges = await page.locator('.sb-d-table tbody td:last-child .sb-d-badge').allTextContents();
   assert(badges.length > 0 && badges.every(b => ['New', 'Quote requested'].includes(b)), 'only rows that need action: ' + [...new Set(badges)]);
   assert.strictEqual(new URL(page.url()).pathname, '/bookings/', 'the tile opens the separate Bookings page');
   assert.strictEqual(await page.evaluate(() => location.hash), '', 'no #hash views');
