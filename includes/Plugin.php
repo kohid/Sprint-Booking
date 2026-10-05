@@ -19,9 +19,13 @@ final class Plugin {
 		add_action( 'rest_api_init', array( Payments::class, 'register' ) );
 		add_action( 'rest_api_init', array( Demo::class, 'register' ) );
 		add_action( 'rest_api_init', array( WhatsApp::class, 'register' ) );
+		add_action( 'rest_api_init', array( Profile::class, 'register' ) );
 		ChatBooking::init();
 		Shortcode::init();
 		MyBookings::init();
+		Profile::init();
+		UserMenu::init();
+		Pages::init();
 		Dashboard::init();
 		add_action(
 			'update_option_' . Settings::OPTION,

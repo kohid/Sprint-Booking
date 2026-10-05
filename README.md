@@ -67,6 +67,10 @@ Not built yet: the AI conversation itself (that lives in ElevenLabs), a customer
 
 Every incoming message is checked against the provider's signature (Twilio token or Meta app secret) before anything is read. Paste the webhook address from "Connect and test" into Twilio ("When a message comes in", POST) or Meta (Callback URL, plus the verify token it shows). It must be https. Keys are never shown again after saving, only their last four characters. WhatsApp, Twilio and Meta charge and approve business numbers on their own terms: check their current prices and rules first. Not yet built: tap-to-reply buttons and lists (replies are numbered text), and an AI free-text agent.
 
+**Account menu and My Profile (v0.12).** `[sprint_user_menu]` is the avatar and dropdown for a site header (an Elementor Shortcode widget in the header template). Visitors who are not signed in see **Guest, Not signed in** with Sign In and Sign Up. Signed-in users see their initial, name and email with **Dashboard** (dispatch staff), **My Bookings**, **My Profile**, **Settings** (admins only) and **Log Out**. There is deliberately no dark-mode switch. Links find their pages automatically from the shortcodes placed on them (My Bookings and Dashboard items are left out when no such page exists, and My Profile falls back to WordPress's own profile screen). It is keyboard friendly (arrow keys, Escape, Tab) and fits phone screens.
+
+`[sprint_my_profile]` is the page behind it, for **every** signed-in user (customers, dispatchers, admins): change name, email, phone and password (the current password is required). A visitor who is not signed in gets Sign in and Create account tabs (customer accounts only; staff are pointed to the WordPress sign-in so any protection on it still applies). Create the two pages from Settings → Shortcodes ("Create page" makes a draft); Sign Up opens the Create account tab.
+
 **Demo data (Settings → Demo).** "Generate 60 demo bookings" makes 10 for each of the six services, one service at a time with progress, using your tariff and routing service. Customers are made up (reserved 07700 900xxx numbers, example.com emails), nothing is emailed and no payment is taken. Demo bookings carry a Demo badge, count in dashboard figures, and "Delete demo data" removes only rows marked demo.
 
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
@@ -133,11 +137,13 @@ php tests/whatsapp-rules-test.php     # WhatsApp: numbers, signatures, message p
 php tests/whatsapp-flow-test.php      # whole booking / cancel / change conversations
 php tests/whatsapp-webhook-test.php   # the WhatsApp class against simulated Twilio and Meta
 php tests/settings-whatsapp-test.php  # WhatsApp settings: cleaning, kept keys
+php tests/user-menu-test.php          # account dropdown items, profile/sign-up validation
+php tests/profile-api-test.php        # My Profile / sign-up / sign-in handlers
 php tests/demo-test.php               # demo data plan
 # dashboard-test.php also covers cancel/change rules and the daily report
 ```
 
-Browser tests of the form (`e2e.js`), dashboard (`dashboard-e2e.js`), chat (`chat-e2e.js`), demo and the WhatsApp settings (`whatsapp-admin-e2e.js`) are in `tests/e2e/` (see its README).
+Browser tests of the form (`e2e.js`), dashboard (`dashboard-e2e.js`), chat (`chat-e2e.js`), demo the WhatsApp settings (`whatsapp-admin-e2e.js`), and the user menu and My Profile (`menu-e2e.js`) are in `tests/e2e/` (see its README).
 
 ## Structure
 

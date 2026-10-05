@@ -1,0 +1,46 @@
+/* Sprint Booking: My Profile ([sprint_my_profile]). Built on the dashboard tokens; light only. */
+.sb-dash.sb-pf { max-width: 46rem; margin: 0 auto; display: block; height: auto; min-height: 0; padding: 0; background: transparent; }
+.sb-pf *, .sb-pf *::before, .sb-pf *::after { box-sizing: border-box; }
+.sb-pf .sb-pf-card { padding: 1.5rem; margin-bottom: 1.25rem; }
+.sb-pf h2 { margin: 0; font-size: 1.25rem; color: var(--d-ink); }
+.sb-pf h3 { margin: 0 0 1rem; font-size: 1.05rem; color: var(--d-ink); }
+.sb-pf p { margin: 0; }
+
+.sb-pf .sb-pf-head { display: flex; align-items: center; gap: 1rem; padding-bottom: 1.25rem; margin-bottom: 1.25rem; border-bottom: 1px dashed var(--d-line2); }
+.sb-pf .sb-pf-head p { margin-top: 0.2rem; color: var(--d-muted); overflow-wrap: anywhere; }
+.sb-pf .sb-pf-avatar { display: grid; place-items: center; flex: none; width: 4rem; height: 4rem; border-radius: 50%; background: var(--d-red-light); color: var(--d-red); font-size: 1.4rem; font-weight: 600; text-transform: uppercase; }
+
+.sb-pf .sb-pf-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1.25rem; }
+.sb-pf .sb-pf-grid--one { grid-template-columns: minmax(0, 1fr); }
+.sb-pf .sb-pf-field label { display: block; margin-bottom: 0.35rem; font-size: 0.85rem; font-weight: 600; color: var(--d-ink); }
+.sb-pf .sb-pf-field input {
+	display: block; width: 100%; height: auto; margin: 0; padding: 0.7rem 0.9rem; border: 1px solid var(--d-line2); border-radius: var(--d-radius);
+	background: #fff; color: var(--d-text); font: inherit; font-size: 0.95rem; box-shadow: none;
+}
+.sb-pf .sb-pf-field input:focus { outline: none; border-color: var(--d-red); box-shadow: var(--d-ring); }
+.sb-pf .sb-pf-field input[aria-invalid="true"] { border-color: var(--d-red); }
+.sb-pf .sb-pf-err { margin-top: 0.3rem; font-size: 0.82rem; font-weight: 600; color: var(--d-red-dark); }
+.sb-pf .sb-pf-err[hidden] { display: none; }
+.sb-pf .sb-pf-note { margin-top: 0.9rem; font-size: 0.85rem; color: var(--d-muted); }
+.sb-pf .sb-pf-note a { color: var(--d-red); }
+.sb-pf .sb-pf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.9rem; margin-top: 1.25rem; }
+.sb-pf .sb-pf-msg { font-size: 0.9rem; font-weight: 600; }
+.sb-pf .sb-pf-msg.is-ok { color: var(--t-success, #0a8f5a); }
+.sb-pf .sb-pf-msg.is-error { color: var(--d-red-dark); }
+.sb-pf .sb-pf-links { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.sb-pf .sb-pf-check { display: flex; align-items: flex-start; gap: 0.55rem; margin-top: 1rem; font-size: 0.9rem; color: var(--d-text); cursor: pointer; }
+.sb-pf .sb-pf-check input { margin-top: 0.2rem; accent-color: var(--d-red); }
+.sb-pf .sb-pf-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+.sb-pf .sb-pf-tabs { display: flex; gap: 0.25rem; margin-bottom: 1.25rem; padding: 0.25rem; border-radius: var(--d-radius); background: var(--d-page); }
+.sb-pf .sb-pf-tab { flex: 1; padding: 0.6rem 0.8rem; border: 0; border-radius: var(--d-radius); background: transparent; color: var(--d-muted); font: inherit; font-weight: 600; cursor: pointer; }
+.sb-pf .sb-pf-tab[aria-selected="true"] { background: #fff; color: var(--d-red); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
+.sb-pf .sb-pf-tab:focus-visible { outline: none; box-shadow: var(--d-ring); }
+.sb-pf .sb-pf-form[hidden] { display: none; }
+.sb-pf .sb-pf-auth { max-width: 30rem; margin-left: auto; margin-right: auto; }
+
+@media (max-width: 560px) {
+	.sb-pf .sb-pf-card { padding: 1.1rem; }
+	.sb-pf .sb-pf-grid { grid-template-columns: minmax(0, 1fr); }
+	.sb-pf .sb-pf-grid > span { display: none; }
+}

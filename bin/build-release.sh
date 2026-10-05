@@ -37,6 +37,8 @@ php tests/whatsapp-rules-test.php >/dev/null
 php tests/whatsapp-flow-test.php >/dev/null
 php tests/whatsapp-webhook-test.php >/dev/null
 php tests/settings-whatsapp-test.php >/dev/null
+php tests/user-menu-test.php >/dev/null
+php tests/profile-api-test.php >/dev/null
 
 mkdir -p dist
 rm -f dist/sprint-booking.zip

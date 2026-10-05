@@ -1,0 +1,60 @@
+/**
+ * Sprint Booking: account dropdown for a site header ([sprint_user_menu]).
+ * Light only. Selectors are prefixed and specific so a theme's button and link styles do not leak in.
+ */
+.sb-um {
+	--um-red: #e20a17;
+	--um-tint: #fdecee;
+	--um-ink: #181c32;
+	--um-text: #3f4254;
+	--um-soft: #a1a5b7;
+	--um-line: #eff2f5;
+	--um-hover: #f5f8fa;
+	position: relative;
+	display: inline-block;
+	font-family: inherit;
+	line-height: 1.4;
+	text-align: left;
+}
+.sb-um *, .sb-um *::before, .sb-um *::after { box-sizing: border-box; }
+
+.sb-um .sb-um__btn {
+	display: grid; place-items: center; width: 40px; height: 40px; margin: 0; padding: 0;
+	border: 0; border-radius: 50%; background: transparent; box-shadow: none; cursor: pointer; line-height: 1;
+}
+.sb-um .sb-um__btn:hover, .sb-um .sb-um__btn:focus, .sb-um .sb-um__btn[aria-expanded="true"] { background: transparent; box-shadow: none; }
+.sb-um .sb-um__btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(226, 10, 23, 0.28); }
+.sb-um .sb-um__btn:hover .sb-um__avatar, .sb-um .sb-um__btn[aria-expanded="true"] .sb-um__avatar { filter: brightness(0.96); }
+
+.sb-um .sb-um__avatar {
+	display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden;
+	background: var(--um-tint); color: var(--um-red); font-size: 0.95rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase;
+}
+.sb-um .sb-um__avatar.is-guest { background: #e9ecf1; color: #b5b9c7; }
+.sb-um .sb-um__avatar svg { width: 72%; height: 72%; fill: currentColor; }
+.sb-um .sb-um__avatar--lg { width: 3.2rem; height: 3.2rem; font-size: 1.15rem; }
+
+.sb-um .sb-um__panel {
+	position: absolute; z-index: 99999; top: calc(100% + 0.6rem); width: 17rem; max-width: calc(100vw - 24px);
+	background: #fff; border-radius: 0.625rem; box-shadow: 0 0 50px rgba(82, 63, 105, 0.16); overflow: hidden;
+	animation: sb-um-in 0.14s ease-out;
+}
+.sb-um .sb-um__panel[hidden] { display: none; }
+.sb-um--right .sb-um__panel { right: 0; }
+.sb-um--left .sb-um__panel { left: 0; }
+@keyframes sb-um-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.sb-um .sb-um__head { display: flex; align-items: center; gap: 0.9rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--um-line); }
+.sb-um .sb-um__who { display: flex; flex-direction: column; min-width: 0; }
+.sb-um .sb-um__who strong { color: var(--um-ink); font-size: 0.98rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-um .sb-um__who span { color: var(--um-soft); font-size: 0.8rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sb-um .sb-um__list { padding: 0.5rem 0; }
+.sb-um .sb-um__panel a.sb-um__item {
+	display: block; padding: 0.6rem 1.25rem; color: var(--um-text); font-size: 0.95rem; font-weight: 400; text-decoration: none; background: transparent; border: 0;
+}
+.sb-um .sb-um__panel a.sb-um__item:hover, .sb-um .sb-um__panel a.sb-um__item:focus { background: var(--um-hover); color: var(--um-red); text-decoration: none; }
+.sb-um .sb-um__panel a.sb-um__item:focus-visible { outline: none; box-shadow: inset 3px 0 0 var(--um-red); }
+.sb-um .sb-um__sep { height: 0; margin: 0.4rem 0; border: 0; border-top: 1px solid var(--um-line); }
+
+@media (prefers-reduced-motion: reduce) { .sb-um .sb-um__panel { animation: none; } }

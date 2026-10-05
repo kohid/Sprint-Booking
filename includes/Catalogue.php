@@ -67,6 +67,55 @@ final class Catalogue {
 				'example'     => '[sprint_my_bookings]',
 			),
 			array(
+				'tag'         => UserMenu::TAG,
+				'title'       => __( 'User menu (account dropdown)', 'sprint-booking' ),
+				'audience'    => __( 'Everyone', 'sprint-booking' ),
+				'description' => __( 'The avatar and dropdown for your site header. Visitors who are not signed in see Sign In and Sign Up. Signed-in users see their name and email, then Dashboard (dispatch staff), My Bookings, My Profile, Settings (admins only) and Log Out. Pages are found automatically from the shortcodes on them. Put it in an Elementor header with a Shortcode widget.', 'sprint-booking' ),
+				'page_title'  => __( 'User menu', 'sprint-booking' ),
+				'attributes'  => array(
+					array(
+						'name'    => 'align',
+						'default' => 'right',
+						'help'    => __( 'Which edge of the avatar the dropdown lines up with: right (for a button at the right of a header) or left.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'profile_url',
+						'default' => __( 'the page holding My profile', 'sprint-booking' ),
+						'help'    => __( 'Address of the My Profile page. Normally found automatically.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'bookings_url',
+						'default' => __( 'the page holding My bookings', 'sprint-booking' ),
+						'help'    => __( 'Address of the My Bookings page. The item is left out if there is none.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'dashboard_url',
+						'default' => __( 'the dashboard page', 'sprint-booking' ),
+						'help'    => __( 'Where Dashboard goes for staff. Normally found automatically.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'login_url',
+						'default' => __( 'the My profile page', 'sprint-booking' ),
+						'help'    => __( 'Where Sign In goes.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'signup_url',
+						'default' => __( 'the My profile page, Create account tab', 'sprint-booking' ),
+						'help'    => __( 'Where Sign Up goes.', 'sprint-booking' ),
+					),
+				),
+				'example'     => '[sprint_user_menu align="right"]',
+			),
+			array(
+				'tag'         => Profile::TAG,
+				'title'       => __( 'My profile', 'sprint-booking' ),
+				'audience'    => __( 'Everyone (signed-in users edit their own details)', 'sprint-booking' ),
+				'description' => __( 'Every signed-in user, customer or staff, can change their own name, email, phone and password. Visitors who are not signed in get Sign in and Create account tabs. This is the page Sign In, Sign Up and My Profile in the user menu open.', 'sprint-booking' ),
+				'page_title'  => __( 'My profile', 'sprint-booking' ),
+				'attributes'  => array(),
+				'example'     => '[sprint_my_profile]',
+			),
+			array(
 				'tag'         => Dashboard::SHELL_TAG,
 				'title'       => __( 'Dashboard (all pages)', 'sprint-booking' ),
 				'audience'    => __( 'Selected roles', 'sprint-booking' ),
