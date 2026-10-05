@@ -482,6 +482,7 @@
 	function legBadge( r ) {
 		if ( r.leg === 'return' ) { return el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-leg', text: 'Return' } ); }
 		if ( r.leg === 'outbound' ) { return el( 'span', { 'class': 'sb-d-badge sb-d-badge--teal sb-d-leg', text: 'Way out' } ); }
+		if ( r.return ) { return el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-leg', text: 'Return included' } ); } // An older booking that holds both journeys in one.
 		return null;
 	}
 

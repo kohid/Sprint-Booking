@@ -57,7 +57,7 @@ async function newPage(browser, opts = {}) {
       const vehicles = {}; if (!quoteOnly) vk.forEach(k => vehicles[k] = price(k));
       const veh = b.vehicle || vk[0];
       const lines = quoteOnly ? [] : [{ key: 'base', pence: 350 }, { key: 'distance', pence: Math.round(dist / MI * 240) }, ...(vias ? [{ key: 'vias', pence: vias * 150 }] : []), ...(b.luggage > 2 ? [{ key: 'luggage', pence: (b.luggage - 2) * 150 }] : []), ...(b.is_return ? [{ key: 'return', pence: 0 }] : [])];
-      return json({ distance_m: dist, duration_s: Math.round(dist / 11), legs, geometry: g, estimated: false, return_distance_m: back ? rdist : null, return_duration_s: back ? Math.round(rdist / 11) : null, return_legs: back ? rlegs : null, return_geometry: back ? rg : null, quote_only: quoteOnly, reason: quoteOnly ? 'service' : null, lines, total_pence: quoteOnly ? null : price(veh), vehicles });
+      return json({ distance_m: dist, duration_s: Math.round(dist / 11), legs, geometry: g, estimated: false, return_distance_m: back ? rdist : null, return_duration_s: back ? Math.round(rdist / 11) : null, return_legs: back ? rlegs : null, return_geometry: back ? rg : null, quote_only: quoteOnly, reason: quoteOnly ? 'service' : null, lines, total_pence: quoteOnly ? null : price(veh), outbound_pence: quoteOnly ? null : Math.round(price(veh) / 2), return_pence: quoteOnly ? null : price(veh) - Math.round(price(veh) / 2), vehicles });
     }
     if (ep === 'bookings' && log.bookingError) { const err = log.bookingError; log.bookingError = null; log.posted.push(b); return json(err, 400); }
     if (ep === 'bookings') {
@@ -164,7 +164,22 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert(await page.locator('[data-sb-tabs]').isVisible(), 'tabs appear once a return is wanted');
   assert.deepStrictEqual(await page.locator('[data-sb-tab]').allTextContents(), ['Journey', 'Return journey'], 'tab names');
   assert.strictEqual(await page.getAttribute('[data-sb-tab=out]', 'aria-selected'), 'true');
+  // The map has a Way out / Return switch, and starts on the way out.
+  assert(await page.locator('[data-sb-map-head]').isVisible(), 'the map gets a Way out / Return strip once a return is wanted');
+  assert.strictEqual(await page.getAttribute('[data-sb-maptab=out]', 'aria-pressed'), 'true');
+  assert(/miles/.test(await page.textContent('[data-sb-map-info]')) && /via stops/.test(await page.textContent('[data-sb-map-info]')), 'way out: distance and via stops: ' + await page.textContent('[data-sb-map-info]'));
+  const outPins = await page.locator('.leaflet-marker-icon').count();
+  assert(outPins >= 2 && await page.locator('.sb-pin--back').count() === 0, 'way out pins are red/dark');
+  assert(/Way out £[\d.]+ · Return £[\d.]+/.test(await page.textContent('.sb-split')), 'the fare shows the split between the two bookings');
   await page.click('[data-sb-tab=ret]');
+  // Same route in reverse: the map switches to the return, with blue pins running B to A.
+  await page.waitForFunction(() => /Same route in reverse/.test(document.querySelector('[data-sb-map-info]').textContent));
+  assert.strictEqual(await page.getAttribute('[data-sb-maptab=ret]', 'aria-pressed'), 'true', 'the map follows the tab');
+  assert.strictEqual(await page.locator('.sb-pin--back').count(), outPins, 'the same stops, as return pins');
+  assert.strictEqual(await page.locator('.leaflet-marker-icon[title^="Return pickup"]').count(), 1);
+  assert.strictEqual(await page.locator('path[stroke="#0b6bcb"]').count(), 1, 'the return is drawn in blue');
+  assert(/Return pickup: MOCK Castle|Return pickup: /.test(await page.getAttribute('.leaflet-marker-icon[title^="Return pickup"]', 'title')));
+  await page.screenshot({ path: OUT + '/03a-return-map-same.png', fullPage: true });
   assert(await page.locator('[data-sb-tabpanel=ret]').isVisible() && await page.locator('[data-sb-tabpanel=out]').isHidden(), 'the return tab replaces the outbound panel');
   assert(await page.isChecked('[data-sb-return-same]'), 'same route in reverse is ticked by default');
   assert(/same route in reverse, with the same via stops/.test(await page.textContent('[data-sb-tabpanel=ret] .sb-check')), 'checkbox wording');
@@ -189,7 +204,22 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   await page.waitForFunction(() => /return \d/.test(document.querySelector('.sb-trip') ? document.querySelector('.sb-trip').textContent : ''));
   const q2 = log.quotes.at(-1); assert.strictEqual(q2.return_same, false); assert.strictEqual(q2.return_stops.length, 2, 'own return route is sent');
   assert(/Way out [\d.]+ miles · return [\d.]+ miles/.test(await page.textContent('.sb-trip')), 'summary shows both distances: ' + await page.textContent('.sb-trip'));
+  // Its own route: the map now shows that route, with the way out as a faint dashed line for comparison.
+  await page.waitForFunction(() => /no via stops/.test(document.querySelector('[data-sb-map-info]').textContent));
+  assert.strictEqual(await page.locator('.sb-pin--back').count(), 2, 'two return pins: pickup and drop-off, no vias');
+  assert.strictEqual(await page.locator('path[stroke="#0b6bcb"]').count(), 1, 'the return route is drawn');
+  assert.strictEqual(await page.locator('path[stroke="#8a93a3"]').count(), 1, 'the way out stays as a faint dashed line');
+  assert(/miles/.test(await page.textContent('[data-sb-map-info]')) && !/Same route/.test(await page.textContent('[data-sb-map-info]')), 'return distance shown: ' + await page.textContent('[data-sb-map-info]'));
   await page.screenshot({ path: OUT + '/03b-return-tab.png', fullPage: true });
+  // The map's own switch flips between the two without using the tabs.
+  await page.click('[data-sb-maptab=out]');
+  assert.strictEqual(await page.getAttribute('[data-sb-tab=out]', 'aria-selected'), 'true', 'the switch also moves the tab');
+  assert.strictEqual(await page.locator('.sb-pin--back').count(), 0, 'way out pins are back');
+  assert.strictEqual(await page.locator('path[stroke="#e20a17"]').count(), 1, 'the way out is drawn in red');
+  assert.strictEqual(await page.locator('path[stroke="#8a93a3"]').count(), 1, 'with the return as the faint line');
+  await page.screenshot({ path: OUT + '/03c-map-way-out.png', fullPage: true });
+  await page.click('[data-sb-maptab=ret]');
+  assert(await page.locator('[data-sb-tabpanel=ret]').isVisible(), 'and back to the return');
 
   // An own route that is not filled in cannot be booked.
   await page.click('[data-sb-tab=ret] >> nth=0');

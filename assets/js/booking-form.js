@@ -659,6 +659,10 @@
 			? 'Way out ' + miles( q.distance_m ) + ' miles · return ' + miles( q.return_distance_m ) + ' miles'
 			: miles( q.distance_m ) + ' miles · ' + duration( q.duration_s ) + ( form.elements.is_return.checked ? ' each way' : '' ) ) } ) );
 
+		if ( form.elements.is_return.checked && ! q.quote_only && q.outbound_pence != null && q.return_pence != null ) {
+			box.appendChild( el( 'p', { 'class': 'sb-split', text: 'Way out ' + money( q.outbound_pence ) + ' · Return ' + money( q.return_pence ) + ' (two bookings, two references)' } ) );
+		}
+
 		if ( q.lines && q.lines.length ) {
 			var dl = el( 'dl', { 'class': 'sb-lines' } );
 			q.lines.forEach( function ( l ) {
@@ -792,43 +796,84 @@
 		routeLayer = L.layerGroup().addTo( map );
 	}
 
+	/** Which journey the map is showing: the way back only when there is one and its tab is open. */
+	function mapLeg() { return state.leg === 'ret' && form.elements.is_return.checked ? 'ret' : 'out'; }
+
+	function lineOf( geometry ) {
+		return geometry && geometry.length > 1 ? geometry.map( function ( c ) { return [ c[ 1 ], c[ 0 ] ]; } ) : null;
+	}
+
+	var LEG_COLOUR = { out: '#e20a17', ret: '#0b6bcb' };
+
 	function updateMap() {
 		if ( ! map ) { return; }
 		markerLayer.clearLayers();
 		routeLayer.clearLayers();
+		var leg = mapLeg(), q = state.quote, wantsReturn = form.elements.is_return.checked;
 		var pts = [];
 
-		state.stops.forEach( function ( s, i ) {
+		legStops( leg ).forEach( function ( s, i ) {
 			if ( ! s.resolved ) { return; }
-			var role = stopRole( i, 'out' );
+			var role = stopRole( i, leg );
 			var icon = L.divIcon( {
 				className: '',
-				html: '<span class="sb-pin sb-pin--' + role + '">' + ( role === 'pickup' ? 'A' : ( role === 'dropoff' ? 'B' : i ) ) + '</span>',
+				html: '<span class="sb-pin sb-pin--' + role + ( leg === 'ret' ? ' sb-pin--back' : '' ) + '">' + ( role === 'pickup' ? 'A' : ( role === 'dropoff' ? 'B' : i ) ) + '</span>',
 				iconSize: [ 26, 26 ],
 				iconAnchor: [ 13, 13 ]
 			} );
-			L.marker( [ s.lat, s.lng ], { icon: icon, title: stopTitle( i, 'out' ) + ': ' + s.label, keyboard: false } ).addTo( markerLayer );
+			L.marker( [ s.lat, s.lng ], { icon: icon, title: stopTitle( i, leg ) + ': ' + s.label, keyboard: false } ).addTo( markerLayer );
 			pts.push( [ s.lat, s.lng ] );
 		} );
 
-		var line = state.quote && state.quote.geometry && allResolved()
-			? state.quote.geometry.map( function ( c ) { return [ c[ 1 ], c[ 0 ] ]; } )
-			: null;
-		if ( line && line.length > 1 ) {
-			L.polyline( line, { color: '#ffffff', weight: 9, opacity: 0.9 } ).addTo( routeLayer );
-			var pl = L.polyline( line, { color: '#e20a17', weight: 5, opacity: 1 } ).addTo( routeLayer );
-			var bounds = pl.getBounds();
-			// A return on its own route is drawn as a dashed dark line.
-			var back = state.quote.return_geometry && returnOwnRoute() ? state.quote.return_geometry.map( function ( c ) { return [ c[ 1 ], c[ 0 ] ]; } ) : null;
-			if ( back && back.length > 1 ) {
-				var bl = L.polyline( back, { color: '#101820', weight: 4, opacity: 0.85, dashArray: '2 9', lineCap: 'round' } ).addTo( routeLayer );
-				bounds = bounds.extend( bl.getBounds() );
-			}
+		// The way out is always known; the way back is the same line reversed, or its own route.
+		var outLine = q && state.stops.every( function ( s ) { return s.resolved; } ) ? lineOf( q.geometry ) : null;
+		var backLine = null;
+		if ( wantsReturn && q ) { backLine = returnOwnRoute() ? ( returnResolved() ? lineOf( q.return_geometry ) : null ) : outLine; }
+		var main = leg === 'ret' ? backLine : outLine;
+		// The other journey stays on the map as a faint dashed line, so a different via stop is easy to see.
+		var ghost = leg === 'ret' ? outLine : ( wantsReturn && returnOwnRoute() ? backLine : null );
+
+		var bounds = null;
+		if ( ghost ) {
+			bounds = L.polyline( ghost, { color: '#8a93a3', weight: 4, opacity: 0.6, dashArray: '6 8' } ).addTo( routeLayer ).getBounds();
+		}
+		if ( main ) {
+			L.polyline( main, { color: '#ffffff', weight: 9, opacity: 0.9 } ).addTo( routeLayer );
+			var pl = L.polyline( main, { color: LEG_COLOUR[ leg ], weight: 5, opacity: 1 } ).addTo( routeLayer );
+			bounds = bounds ? bounds.extend( pl.getBounds() ) : pl.getBounds();
+		}
+		if ( bounds ) {
 			map.fitBounds( bounds, { padding: [ 30, 30 ] } );
 		} else if ( pts.length > 1 ) {
 			map.fitBounds( pts, { padding: [ 40, 40 ] } );
 		} else if ( pts.length === 1 ) {
 			map.setView( pts[ 0 ], 14 );
+		}
+		syncMapHead( leg, q, wantsReturn );
+	}
+
+	/** The strip above the map: which journey it shows, and that journey's distance, time and via stops. */
+	function syncMapHead( leg, q, wantsReturn ) {
+		var head = $( '[data-sb-map-head]' );
+		if ( ! head ) { return; }
+		head.hidden = ! wantsReturn;
+		if ( ! wantsReturn ) { return; }
+		$$( '[data-sb-maptab]', head ).forEach( function ( b ) {
+			var on = b.getAttribute( 'data-sb-maptab' ) === leg;
+			b.classList.toggle( 'is-on', on );
+			b.setAttribute( 'aria-pressed', on ? 'true' : 'false' );
+		} );
+		var stops = legStops( leg );
+		var vias = Math.max( 0, stops.length - 2 );
+		var viaText = vias ? ' · ' + vias + ( vias === 1 ? ' via stop' : ' via stops' ) : ' · no via stops';
+		var info = $( '[data-sb-map-info]' );
+		info.className = 'sb-map-info sb-map-info--' + leg;
+		if ( ! q ) { info.textContent = leg === 'ret' && returnOwnRoute() && ! returnResolved() ? 'Add the return pickup and drop-off to see this route.' : 'Add your stops to see this route.'; return; }
+		if ( leg === 'out' ) { info.textContent = miles( q.distance_m ) + ' miles · ' + duration( q.duration_s ) + viaText; return; }
+		if ( returnOwnRoute() ) {
+			info.textContent = q.return_distance_m ? miles( q.return_distance_m ) + ' miles · ' + duration( q.return_duration_s ) + viaText : 'Add the return pickup and drop-off to see this route.';
+		} else {
+			info.textContent = 'Same route in reverse · ' + miles( q.distance_m ) + ' miles · ' + duration( q.duration_s ) + viaText;
 		}
 	}
 
@@ -843,6 +888,7 @@
 		} );
 		$$( '[data-sb-tabpanel]' ).forEach( function ( p ) { p.hidden = p.getAttribute( 'data-sb-tabpanel' ) !== leg; } );
 		if ( leg === 'ret' ) { syncReturn(); }
+		updateMap();
 	}
 
 	// ── Account choice (step 3) ─────────────────────────────────
@@ -1086,7 +1132,7 @@
 		}
 
 		// The way out.
-		var out = [ [ 'Service', service().label + ( isAirport() ? ' — ' + ( val( 'airport_direction' ) === 'arrival' ? 'Arrival' : 'Departure' ) : '' ) ], [ 'Pickup time', fmtDateTime( pickupValue() ) ] ];
+		var out = [ [ 'Trip', wantsReturn ? 'Return (two bookings, two references)' : 'One way' ], [ 'Service', service().label + ( isAirport() ? ' — ' + ( val( 'airport_direction' ) === 'arrival' ? 'Arrival' : 'Departure' ) : '' ) ], [ 'Pickup time', fmtDateTime( pickupValue() ) ] ];
 		state.stops.forEach( function ( s, i ) {
 			var role = stopRole( i, 'out' );
 			out.push( [ role === 'pickup' ? 'Pickup from' : ( role === 'dropoff' ? 'Drop-off at' : stopTitle( i, 'out' ) ), s.label ] );
@@ -1285,6 +1331,10 @@
 			scheduleQuote();
 		} );
 		form.elements.airport_direction.addEventListener( 'change', function () { applyAirportDirection(); scheduleQuote(); } );
+
+		$$( '[data-sb-maptab]' ).forEach( function ( b ) {
+			b.addEventListener( 'click', function () { showLeg( b.getAttribute( 'data-sb-maptab' ) ); } );
+		} );
 
 		form.elements.is_return.addEventListener( 'change', function () {
 			$( '[data-sb-tabs]' ).hidden = ! this.checked;

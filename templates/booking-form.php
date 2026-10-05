@@ -325,6 +325,14 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 	</form>
 
 	<aside class="sb-aside" aria-label="<?php esc_attr_e( 'Route and fare', 'sprint-booking' ); ?>">
+		<!-- With a return, the map follows the tab: the way out, or the way back on its own route. -->
+		<div class="sb-map-head" data-sb-map-head hidden>
+			<div class="sb-map-toggle" role="group" aria-label="<?php esc_attr_e( 'Which journey the map shows', 'sprint-booking' ); ?>">
+				<button type="button" class="sb-map-btn is-on" data-sb-maptab="out" aria-pressed="true"><?php esc_html_e( 'Way out', 'sprint-booking' ); ?></button>
+				<button type="button" class="sb-map-btn" data-sb-maptab="ret" aria-pressed="false"><?php esc_html_e( 'Return', 'sprint-booking' ); ?></button>
+			</div>
+			<p class="sb-map-info" data-sb-map-info aria-live="polite"></p>
+		</div>
 		<div class="sb-map" data-sb-map role="region" aria-label="<?php esc_attr_e( 'Route map', 'sprint-booking' ); ?>"></div>
 		<div class="sb-summary" data-sb-summary aria-live="polite"></div>
 	</aside>

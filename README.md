@@ -79,6 +79,8 @@ The dashboard shortcodes show a sign-in form to visitors and a "No access" notic
 
 ## The booking form
 
+**Return journeys on the map (v0.14).** Once "I also need a return journey" is ticked, a Way out / Return switch appears above the map and follows the Journey / Return journey tabs. The Return view shows the way back in blue with its own pins, distance, time and via stops (the same route reversed, or the return's own route if its stops differ), and keeps the way out as a faint dashed line so a different via stop is easy to see. The fare panel shows the split between the two bookings, and the Passenger details summary starts with a "Trip" line (One way, or Return with two references) so a forgotten tick is easy to spot. Bookings that still hold both journeys in one row (made before v0.10) are badged "Return included" on the Bookings page.
+
 **Form changes (v0.13).** Choosing "Other" as the vulnerable-traveller type shows a required "Please specify" box (3 to 120 characters, kept with the booking and shown to dispatch and in the emails). Available cars are always three across. On Passenger details the summary has a Journey tab and, for a return, a Return journey tab, then two rows of three boxes: Passengers, Suitcases and Carry-on bags, and below them Car, Distance and Fare (three across on a phone too).
 
 - **Return journey:** tick "I also need a return journey" and the route splits into two tabs, Journey and Return journey. On the return tab, "The return follows the same route in reverse, with the same via stops" is ticked by default and fills the return route from the way out (read-only, updating as the way out changes). Untick it and the return route is empty: the customer enters their own pickup, via stops and drop-off, and the fare is worked out from that route's own distance.
@@ -141,6 +143,7 @@ php tests/whatsapp-webhook-test.php   # the WhatsApp class against simulated Twi
 php tests/settings-whatsapp-test.php  # WhatsApp settings: cleaning, kept keys
 php tests/user-menu-test.php          # account dropdown items, profile/sign-up validation
 php tests/profile-api-test.php        # My Profile / sign-up / sign-in handlers
+php tests/create-return-test.php      # a return booking becomes two bookings and two references
 php tests/demo-test.php               # demo data plan
 # dashboard-test.php also covers cancel/change rules and the daily report
 ```
