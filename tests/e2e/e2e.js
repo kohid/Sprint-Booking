@@ -24,7 +24,7 @@ async function newPage(browser, opts = {}) {
   const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 }, deviceScaleFactor: opts.dpr || 1 });
   const page = await ctx.newPage();
   const log = { payLinks: false, tiles: [], quotes: [], errors: [], posted: [], geocodeCalls: [], headers: [], bookingError: null };
-  page.on('pageerror', e => log.errors.push('pageerror: ' + e.message));
+  page.on('pageerror', e => { log.errors.push('pageerror: ' + e.message); if (process.env.SB_E2E_VERBOSE) console.log('PAGEERROR', e.message); });
   page.on('console', m => { if (m.type() === 'error' && !/tiles\.test|ERR_/.test(m.text())) log.errors.push('console: ' + m.text()); });
   await page.route('http://pay.test/**', r => r.fulfill({ contentType: 'text/html', body: '<h1>Provider page</h1>' }));
   await page.route('http://tiles.test/**', r => { log.tiles.push(r.request().url()); r.abort(); });
@@ -225,7 +225,19 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert.strictEqual(await page.locator('select[name=vulnerable_type] option').count(), 6, 'type select: prompt + 5 types');
   await page.click('[data-sb-next]');
   assert(/vulnerable solo traveller/i.test(await page.textContent('[data-sb-errors]')), 'must choose a type once ticked');
+  assert(await page.locator('[data-sb-vulnerable-other]').isHidden(), 'no "specify" box for the ordinary types');
+  await page.selectOption('[name=vulnerable_type]', 'other');
+  assert(await page.locator('[data-sb-vulnerable-other]').isVisible(), 'choosing Other asks you to specify');
+  assert.strictEqual(await page.evaluate(() => document.activeElement.name), 'vulnerable_detail', 'and puts the cursor there');
+  await page.click('[data-sb-next]');
+  assert(/what "Other" means/.test(await page.textContent('[data-sb-errors]')), 'Other with nothing written is refused');
+  assert(await page.locator('[name=vulnerable_detail].is-invalid').count() === 1, 'and the box is marked');
+  await page.fill('[name=vulnerable_detail]', 'ab'); await page.click('[data-sb-next]');
+  assert(/what "Other" means/.test(await page.textContent('[data-sb-errors]')), 'two letters is not an explanation');
   await page.selectOption('[name=vulnerable_type]', 'lone_female');
+  assert(await page.locator('[data-sb-vulnerable-other]').isHidden() && (await page.inputValue('[name=vulnerable_detail]')) === '', 'changing back hides and clears it');
+  await page.selectOption('[name=vulnerable_type]', 'other'); await page.fill('[name=vulnerable_detail]', 'Uses a wheelchair');
+  await page.screenshot({ path: OUT + '/02b-vulnerable-other.png', fullPage: true });
 
   // ── Pickup that is too soon is refused ──
   const min = await page.evaluate(() => window.SB_CONFIG.minPickup);
@@ -238,6 +250,10 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   // ── Step 2: car pictures, capacity and luggage rules ──
   await page.click('[data-sb-next]'); await page.waitForSelector('[data-panel="2"]:not([hidden])');
   assert.strictEqual(await page.locator('.sb-vehicle').count(), 5);
+  const cols = await page.locator('.sb-vehicle-list').evaluate(g => getComputedStyle(g).gridTemplateColumns.split(' ').length);
+  assert.strictEqual(cols, 3, 'cars are in three columns');
+  const tops = await page.locator('.sb-vehicle').evaluateAll(n => n.map(x => Math.round(x.getBoundingClientRect().top)));
+  assert(tops[0] === tops[1] && tops[1] === tops[2] && tops[3] > tops[2] && tops[3] === tops[4], 'three cars on the first row and two on the second: ' + tops);
   assert.strictEqual(await page.locator('.sb-vehicle-pic svg.sb-car').count(), 4, 'four cars use the built-in illustration');
   assert.strictEqual(await page.locator('.sb-vehicle-pic img').count(), 1, 'a car with a chosen photo shows the photo');
   await page.screenshot({ path: OUT + '/04-step2.png', fullPage: true });
@@ -251,6 +267,26 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   // ── Step 3: account choices, no address fields, flight number only for airport ──
   await page.click('[data-sb-next]'); await page.waitForSelector('[data-panel="3"]:not([hidden])');
   assert.strictEqual(await page.locator('[name=pickup_detail], [name=dropoff_detail]').count(), 0, 'full address fields are gone');
+  // The summary: journey and return on tabs, the party / car / price in a table.
+  assert.deepStrictEqual(await page.locator('.sb-review-table th').allTextContents(), ['Passengers', 'Suitcases', 'Carry-on bags', 'Car', 'Distance', 'Fare'], 'table columns');
+  const cellsTxt = await page.locator('.sb-review-table td').allTextContents();
+  assert.strictEqual(cellsTxt[0], '5'); assert.strictEqual(cellsTxt[1], '5'); assert(/Minibus/.test(cellsTxt[3]), 'car shown'); assert(/miles/.test(cellsTxt[4]) && /£/.test(cellsTxt[5]) && /return included/.test(cellsTxt[5]), 'distance and fare: ' + cellsTxt.join(' | '));
+  assert.deepStrictEqual(await page.locator('.sb-rv-tabs .sb-tab').allTextContents(), ['Journey', 'Return journey'], 'a return gets two tabs');
+  assert(/Pickup from/.test(await page.textContent('.sb-rv-panel:not([hidden])')) && !/Return time/.test(await page.textContent('.sb-rv-panel:not([hidden])')), 'the Journey tab shows the way out only');
+  await page.click('.sb-rv-tabs .sb-tab >> text=Return journey');
+  assert(/Return time/.test(await page.textContent('.sb-rv-panel:not([hidden])')) && /Same route in reverse|Return from/.test(await page.textContent('.sb-rv-panel:not([hidden])')), 'the Return tab shows the way back');
+  assert.strictEqual(await page.getAttribute('.sb-rv-tabs .sb-tab >> nth=1', 'aria-selected'), 'true');
+  await page.focus('.sb-rv-tabs .sb-tab >> nth=1'); await page.keyboard.press('ArrowLeft');
+  assert(/Pickup from/.test(await page.textContent('.sb-rv-panel:not([hidden])')), 'arrow keys move between the tabs');
+  assert((await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0, 'no sideways scroll on step 3');
+  await page.screenshot({ path: OUT + '/05-step3-summary.png', fullPage: true });
+  const vp = page.viewportSize();
+  await page.setViewportSize({ width: 360, height: 900 }); await page.waitForTimeout(300);
+  assert((await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0, 'no sideways scroll on a phone, step 3');
+  assert.strictEqual(await page.locator('.sb-review-table td').first().evaluate(c => getComputedStyle(c).display), 'grid', 'the table stacks into label/value rows on a phone');
+  assert.strictEqual(await page.locator('.sb-review-table td').first().evaluate(c => getComputedStyle(c, '::before').content), '"Passengers"', 'with its label beside each figure');
+  await page.screenshot({ path: OUT + '/05b-step3-phone.png', fullPage: true });
+  await page.setViewportSize(vp);
   const radios = await page.locator('input[name=account_mode]').evaluateAll(els => els.map(e => [e.value, e.nextElementSibling.textContent.trim(), e.checked]));
   assert.deepStrictEqual(radios, [['guest', 'Book as Guest', true], ['register', 'Register to manage your bookings on the go!', false], ['login', 'Sign in to book with your saved details', false]], 'three radio choices');
   assert(await page.locator('[data-sb-only=airport]').last().isVisible(), 'flight number shown for Airport Transfer');
@@ -278,7 +314,7 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert.strictEqual(b.return_same, true); assert.deepStrictEqual(b.return_stops, []);
   assert.strictEqual(b.stops.length, 4); assert.strictEqual(b.is_return, true); assert.strictEqual(b.luggage, 5);
   assert.strictEqual(b.account_mode, 'register'); assert.strictEqual(b.password, 'correct horse battery');
-  assert.strictEqual(b.airport_direction, 'arrival'); assert.strictEqual(b.vulnerable, true); assert.strictEqual(b.vulnerable_type, 'lone_female');
+  assert.strictEqual(b.airport_direction, 'arrival'); assert.strictEqual(b.vulnerable, true); assert.strictEqual(b.vulnerable_type, 'other'); assert.strictEqual(b.vulnerable_detail, 'Uses a wheelchair');
   assert(!('pickup_detail' in b) && !('dropoff_detail' in b), 'no address detail fields sent');
   assert(/^\d{4}-\d\d-\d\dT09:30$/.test(b.pickup_at) && /T23:55$/.test(b.return_at), 'times: ' + b.pickup_at + ' / ' + b.return_at);
   assert.strictEqual(b.whatsapp, false, 'no WhatsApp opt-in box on a site without WhatsApp: the form sends false');

@@ -49,6 +49,7 @@ final class Editor {
 				'carry_on'          => $in['carry_on'] ?? $b['carry_on'],
 				'vulnerable'        => '' !== (string) $b['vulnerable_type'],
 				'vulnerable_type'   => $b['vulnerable_type'],
+				'vulnerable_detail' => $b['vulnerable_detail'] ?? '',
 			),
 			false
 		);

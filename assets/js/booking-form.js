@@ -973,6 +973,9 @@
 			if ( form.elements.vulnerable.checked && ! val( 'vulnerable_type' ) ) {
 				errors.push( 'Choose the type of vulnerable solo traveller, or untick the box.' );
 				mark( 'vulnerable_type' );
+			} else if ( form.elements.vulnerable.checked && val( 'vulnerable_type' ) === 'other' && val( 'vulnerable_detail' ).length < 3 ) {
+				errors.push( 'Please say what "Other" means for this traveller, so the driver can look after them.' );
+				mark( 'vulnerable_detail' );
 			}
 		}
 
@@ -1067,38 +1070,101 @@
 		return d.toLocaleDateString( 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' } ) + ', ' + pad( d.getHours() ) + ':' + pad( d.getMinutes() );
 	}
 
+	var reviewSeq = 0;
+
 	function renderReview() {
 		var box = $( '[data-sb-review]' );
 		box.textContent = '';
 		var q = state.quote;
 		var v = CFG.vehicles[ state.vehicle ];
-		var dl = el( 'dl', { 'class': 'sb-review' } );
-		function row( k, t ) { if ( t ) { dl.appendChild( el( 'div', {}, [ el( 'dt', { text: k } ), el( 'dd', { text: t } ) ] ) ); } }
+		var wantsReturn = form.elements.is_return.checked;
 
-		row( 'Service', service().label + ( isAirport() ? ' — ' + ( val( 'airport_direction' ) === 'arrival' ? 'Arrival' : 'Departure' ) : '' ) );
-		row( 'Pickup time', fmtDateTime( pickupValue() ) );
-		if ( form.elements.is_return.checked ) { row( 'Return time', fmtDateTime( returnValue() ) ); }
+		function list( rows ) {
+			var dl = el( 'dl', { 'class': 'sb-review' } );
+			rows.forEach( function ( r ) { if ( r[ 1 ] ) { dl.appendChild( el( 'div', {}, [ el( 'dt', { text: r[ 0 ] } ), el( 'dd', { text: r[ 1 ] } ) ] ) ); } } );
+			return dl;
+		}
+
+		// The way out.
+		var out = [ [ 'Service', service().label + ( isAirport() ? ' — ' + ( val( 'airport_direction' ) === 'arrival' ? 'Arrival' : 'Departure' ) : '' ) ], [ 'Pickup time', fmtDateTime( pickupValue() ) ] ];
 		state.stops.forEach( function ( s, i ) {
 			var role = stopRole( i, 'out' );
-			row( role === 'pickup' ? 'Pickup from' : ( role === 'dropoff' ? 'Drop-off at' : stopTitle( i, 'out' ) ), s.label );
+			out.push( [ role === 'pickup' ? 'Pickup from' : ( role === 'dropoff' ? 'Drop-off at' : stopTitle( i, 'out' ) ), s.label ] );
 		} );
-		if ( returnOwnRoute() ) {
-			state.ret.stops.forEach( function ( s, i ) {
-				var role = stopRole( i, 'ret' );
-				row( role === 'pickup' ? 'Return from' : ( role === 'dropoff' ? 'Return to' : stopTitle( i, 'ret' ) ), s.label );
+
+		// The way back: its own tab.
+		var back = [];
+		if ( wantsReturn ) {
+			back.push( [ 'Return time', fmtDateTime( returnValue() ) ] );
+			if ( returnOwnRoute() ) {
+				state.ret.stops.forEach( function ( s, i ) {
+					var role = stopRole( i, 'ret' );
+					back.push( [ role === 'pickup' ? 'Return from' : ( role === 'dropoff' ? 'Return to' : stopTitle( i, 'ret' ) ), s.label ] );
+				} );
+			} else {
+				var n = state.stops.length;
+				back.push( [ 'Return from', n ? state.stops[ n - 1 ].label : '' ], [ 'Return to', n ? state.stops[ 0 ].label : '' ], [ 'Route', 'Same route in reverse' ] );
+			}
+		}
+
+		var outPanel = el( 'div', { role: 'tabpanel', 'class': 'sb-rv-panel' }, [ list( out ) ] );
+		if ( wantsReturn ) {
+			var id = 'sb-rv' + ( ++reviewSeq );
+			var backPanel = el( 'div', { role: 'tabpanel', 'class': 'sb-rv-panel', hidden: true, id: id + '-ret', 'aria-labelledby': id + '-tab-ret' }, [ list( back ) ] );
+			outPanel.id = id + '-out';
+			outPanel.setAttribute( 'aria-labelledby', id + '-tab-out' );
+			var tabs = el( 'div', { 'class': 'sb-tabs sb-rv-tabs', role: 'tablist', 'aria-label': 'Journey details' } );
+			var buttons = {};
+			[ [ 'out', 'Journey', outPanel ], [ 'ret', 'Return journey', backPanel ] ].forEach( function ( t ) {
+				var b = el( 'button', { type: 'button', role: 'tab', 'class': 'sb-tab', id: id + '-tab-' + t[ 0 ], 'aria-controls': id + '-' + t[ 0 ], 'aria-selected': t[ 0 ] === 'out' ? 'true' : 'false', text: t[ 1 ] } );
+				if ( t[ 0 ] !== 'out' ) { b.tabIndex = -1; }
+				buttons[ t[ 0 ] ] = b;
+				tabs.appendChild( b );
 			} );
-		} else if ( form.elements.is_return.checked ) {
-			row( 'Return route', 'Same route in reverse' );
+			var show = function ( leg, focus ) {
+				[ 'out', 'ret' ].forEach( function ( k ) {
+					buttons[ k ].setAttribute( 'aria-selected', k === leg ? 'true' : 'false' );
+					buttons[ k ].tabIndex = k === leg ? 0 : -1;
+				} );
+				outPanel.hidden = leg !== 'out';
+				backPanel.hidden = leg !== 'ret';
+				if ( focus ) { buttons[ leg ].focus(); }
+			};
+			[ 'out', 'ret' ].forEach( function ( k ) {
+				buttons[ k ].addEventListener( 'click', function () { show( k, false ); } );
+				buttons[ k ].addEventListener( 'keydown', function ( e ) {
+					if ( e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'Home' || e.key === 'End' ) {
+						e.preventDefault();
+						show( e.key === 'ArrowLeft' || e.key === 'Home' ? 'out' : 'ret', true );
+					}
+				} );
+			} );
+			box.appendChild( tabs );
+			box.appendChild( outPanel );
+			box.appendChild( backPanel );
+		} else {
+			box.appendChild( outPanel );
 		}
-		row( 'Car', v ? v.label : '' );
-		row( 'Passengers', String( num( 'passengers', 1 ) ) );
-		row( 'Suitcases', String( num( 'luggage', 0 ) ) );
-		row( 'Carry-on bags', String( num( 'carry_on', 0 ) ) );
+
+		// The party, the car and the price, as a table.
+		var dist = el( 'td', { 'data-label': 'Distance' } );
+		var fare = el( 'td', { 'data-label': 'Fare', 'class': 'sb-rv-fare' } );
 		if ( q ) {
-			row( 'Distance', q.return_distance_m ? miles( q.distance_m ) + ' miles out, ' + miles( q.return_distance_m ) + ' miles back' : miles( q.distance_m ) + ' miles' );
-			row( 'Fare', q.quote_only ? 'We will quote this for you' : money( q.total_pence ) + ( form.elements.is_return.checked ? ' (return included)' : '' ) );
+			dist.appendChild( el( 'span', { text: miles( q.distance_m ) + ' miles' } ) );
+			if ( q.return_distance_m ) { dist.appendChild( el( 'small', { text: miles( q.return_distance_m ) + ' miles back' } ) ); }
+			else if ( wantsReturn ) { dist.appendChild( el( 'small', { text: 'each way' } ) ); }
+			fare.appendChild( el( 'span', { text: q.quote_only ? 'To be quoted' : money( q.total_pence ) } ) );
+			if ( wantsReturn && ! q.quote_only ) { fare.appendChild( el( 'small', { text: 'return included' } ) ); }
+		} else {
+			dist.textContent = '—';
+			fare.textContent = '—';
 		}
-		box.appendChild( dl );
+		var heads = [ 'Passengers', 'Suitcases', 'Carry-on bags', 'Car', 'Distance', 'Fare' ];
+		var cells = [ el( 'td', { 'data-label': 'Passengers', text: String( num( 'passengers', 1 ) ) } ), el( 'td', { 'data-label': 'Suitcases', text: String( num( 'luggage', 0 ) ) } ), el( 'td', { 'data-label': 'Carry-on bags', text: String( num( 'carry_on', 0 ) ) } ), el( 'td', { 'data-label': 'Car', text: v ? v.label : '—' } ), dist, fare ];
+		box.appendChild( el( 'table', { 'class': 'sb-review-table' }, [
+			el( 'thead', {}, [ el( 'tr', {}, heads.map( function ( h ) { return el( 'th', { scope: 'col', text: h } ); } ) ) ] ),
+			el( 'tbody', {}, [ el( 'tr', {}, cells ) ] )
+		] ) );
 
 		applyPayment();
 	}
@@ -1120,6 +1186,7 @@
 		body.return_at = form.elements.is_return.checked ? returnValue() : '';
 		body.vulnerable = form.elements.vulnerable.checked;
 		body.vulnerable_type = body.vulnerable ? val( 'vulnerable_type' ) : '';
+		body.vulnerable_detail = body.vulnerable_type === 'other' ? val( 'vulnerable_detail' ) : '';
 		body.account_mode = mode;
 		[ 'title', 'first_name', 'last_name', 'email', 'phone', 'flight_no', 'company', 'notes', 'website' ].forEach( function ( n ) {
 			if ( form.elements[ n ] ) { body[ n ] = form.elements[ n ].value.trim(); }
@@ -1244,9 +1311,19 @@
 			} );
 		} );
 
+		function showVulnerableOther() {
+			var other = form.elements.vulnerable.checked && form.elements.vulnerable_type.value === 'other';
+			$( '[data-sb-vulnerable-other]' ).hidden = ! other;
+			if ( ! other ) { form.elements.vulnerable_detail.value = ''; }
+		}
+		form.elements.vulnerable_type.addEventListener( 'change', function () {
+			showVulnerableOther();
+			if ( form.elements.vulnerable_type.value === 'other' ) { form.elements.vulnerable_detail.focus(); }
+		} );
 		form.elements.vulnerable.addEventListener( 'change', function () {
 			$( '[data-sb-vulnerable-field]' ).hidden = ! this.checked;
-			if ( ! this.checked ) { form.elements.vulnerable_type.value = ''; }
+			if ( ! this.checked ) { form.elements.vulnerable_type.value = ''; form.elements.vulnerable_detail.value = ''; }
+			showVulnerableOther();
 		} );
 
 		$$( 'input[name="payment"]' ).forEach( function ( r ) { r.addEventListener( 'change', applyPayment ); } );

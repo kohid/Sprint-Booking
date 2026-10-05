@@ -51,6 +51,7 @@ final class Activator {
 			luggage TINYINT(3) UNSIGNED NOT NULL DEFAULT 0,
 			carry_on TINYINT(3) UNSIGNED NOT NULL DEFAULT 0,
 			vulnerable_type VARCHAR(20) NOT NULL DEFAULT '',
+			vulnerable_detail VARCHAR(120) NOT NULL DEFAULT '',
 			pickup_at DATETIME NOT NULL,
 			return_at DATETIME NULL,
 			stops LONGTEXT NOT NULL,

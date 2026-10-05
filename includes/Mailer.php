@@ -78,7 +78,7 @@ final class Mailer {
 		$lines[] = 'Phone: ' . $b['customer_phone'];
 		$lines[] = 'Email: ' . $b['customer_email'];
 		if ( $b['vulnerable_type'] ) {
-			$lines[] = 'Vulnerable solo traveller: ' . ( Rest::VULNERABLE_TYPES[ $b['vulnerable_type'] ] ?? $b['vulnerable_type'] );
+			$lines[] = 'Vulnerable solo traveller: ' . ( Rest::VULNERABLE_TYPES[ $b['vulnerable_type'] ] ?? $b['vulnerable_type'] ) . ( ! empty( $b['vulnerable_detail'] ) ? ': ' . $b['vulnerable_detail'] : '' );
 		}
 		if ( $b['flight_no'] ) {
 			$lines[] = 'Flight: ' . $b['flight_no'];

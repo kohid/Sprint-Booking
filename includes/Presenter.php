@@ -75,7 +75,7 @@ final class Presenter {
 			'flight_no'    => (string) ( $r['flight_no'] ?? '' ),
 			'company'      => (string) ( $r['company'] ?? '' ),
 			'notes'        => (string) ( $r['notes'] ?? '' ),
-			'vulnerable'   => '' !== $vtype ? array( 'key' => $vtype, 'label' => (string) ( Rest::VULNERABLE_TYPES[ $vtype ] ?? $vtype ) ) : null,
+			'vulnerable'   => '' !== $vtype ? array( 'key' => $vtype, 'label' => (string) ( Rest::VULNERABLE_TYPES[ $vtype ] ?? $vtype ) . ( '' !== trim( (string) ( $r['vulnerable_detail'] ?? '' ) ) ? ': ' . trim( (string) $r['vulnerable_detail'] ) : '' ) ) : null,
 			'source'       => (string) ( $r['source'] ?? 'web' ),
 			'leg'          => (string) ( $r['leg'] ?? 'single' ),
 			'paired_ref'   => (string) ( $r['paired_reference'] ?? '' ),

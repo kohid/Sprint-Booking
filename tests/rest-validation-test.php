@@ -75,6 +75,7 @@ t( 'earliest pickup is rounded up to a 5-minute slot', 0 === (int) substr( $earl
 t( 'earliest pickup is no more than 5 minutes past the notice period', $e_ts <= time() + (int) $cfg['min_lead_minutes'] * 60 + 300 );
 t( 'a pickup at the earliest time is accepted', is_array( call( 'read_options', $cfg, array_merge( $good, array( 'pickup_at' => ( new DateTimeImmutable( '@' . ( $e_ts + 60 ) ) )->setTimezone( wp_timezone() )->format( 'Y-m-d\TH:i' ) ) ), true ) ) );
 
+function Rest_label( $k ) { return \SprintBooking\Rest::VULNERABLE_TYPES[ $k ] ?? $k; }
 // Airport direction, vulnerable solo traveller.
 t( 'airport transfer needs departure or arrival', is_wp_error( call( 'read_options', $cfg, array_diff_key( $good, array( 'airport_direction' => 1 ) ), true ) ) );
 t( 'airport transfer accepts departure', is_array( call( 'read_options', $cfg, array_merge( $good, array( 'airport_direction' => 'departure' ) ), true ) ) );
@@ -83,6 +84,13 @@ t( 'other services ignore the direction', '' === call( 'read_options', $cfg, arr
 $air = array_merge( $good, array( 'airport_direction' => 'arrival' ) );
 t( 'vulnerable type is stored when ticked', 'senior' === call( 'read_options', $cfg, array_merge( $air, array( 'vulnerable' => true, 'vulnerable_type' => 'senior' ) ), true )['vulnerable_type'] );
 t( 'vulnerable type is dropped when not ticked', '' === call( 'read_options', $cfg, array_merge( $air, array( 'vulnerable_type' => 'senior' ) ), true )['vulnerable_type'] );
+$oth = array_merge( $air, array( 'vulnerable' => true, 'vulnerable_type' => 'other' ) );
+t( '"Other" must be explained when booking', is_wp_error( call( 'read_options', $cfg, $oth, true ) ) && is_wp_error( call( 'read_options', $cfg, array_merge( $oth, array( 'vulnerable_detail' => '  a ' ) ), true ) ) );
+$o = call( 'read_options', $cfg, array_merge( $oth, array( 'vulnerable_detail' => "  Uses a   wheelchair <b>and</b> a guide dog  " ) ), true );
+t( 'the explanation is kept, tidied and stripped of tags', ! is_wp_error( $o ) && 'Other' === Rest_label( $o['vulnerable_type'] ) && 'Uses a wheelchair and a guide dog' === $o['vulnerable_detail'] );
+t( 'an over-long explanation is cut, not refused', 120 === mb_strlen( call( 'read_options', $cfg, array_merge( $oth, array( 'vulnerable_detail' => str_repeat( 'x', 300 ) ) ), true )['vulnerable_detail'] ) );
+t( 'a quote or staff edit is not held up by a missing explanation', ! is_wp_error( call( 'read_options', $cfg, $oth, false ) ) );
+t( 'an explanation is ignored for the other types', '' === call( 'read_options', $cfg, array_merge( $air, array( 'vulnerable' => true, 'vulnerable_type' => 'senior', 'vulnerable_detail' => 'x y z' ) ), true )['vulnerable_detail'] );
 t( 'ticked without a valid type is rejected', is_wp_error( call( 'read_options', $cfg, array_merge( $air, array( 'vulnerable' => true, 'vulnerable_type' => 'made-up' ) ), true ) ) );
 
 // Stops.

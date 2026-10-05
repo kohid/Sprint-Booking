@@ -121,6 +121,8 @@ t( 'route summary', 'Test Airport' === $p['from'] && 'Test Castle' === $p['to'] 
 t( 'distance in miles and duration in minutes', 10.0 === $p['distance_mi'] && 30 === $p['duration_min'] );
 t( 'price is formatted', 4500 === $p['price_pence'] && '£45.00' === $p['price_text'] && 'base' === $p['lines'][0]['key'] );
 t( 'vulnerable traveller is labelled', 'Senior citizen' === $p['vulnerable']['label'] );
+$po = SprintBooking\Presenter::row( array_merge( $row, array( 'vulnerable_type' => 'other', 'vulnerable_detail' => ' Guide dog ' ) ), $cfg, $tz, new DateTimeImmutable( 'now', $tz ) );
+t( 'an "Other" traveller shows what was written', 'Other: Guide dog' === $po['vulnerable']['label'] );
 t( 'customer details and account flag', 'Test Person' === $p['customer']['name'] && true === $p['customer']['account'] );
 
 $bare = Presenter::row( array( 'id' => 1, 'status' => 'quote_requested', 'stops' => 'not json', 'pickup_at' => '2026-12-25 09:00:00', 'price_pence' => null ), $cfg, $tz, $now );

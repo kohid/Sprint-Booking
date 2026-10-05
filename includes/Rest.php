@@ -40,6 +40,9 @@ final class Rest {
 		'other'       => 'Other',
 	);
 
+	/** Longest note about an "Other" vulnerable traveller. */
+	public const VULNERABLE_DETAIL_MAX = 120;
+
 	public const ACCOUNT_MODES = array( 'guest', 'register', 'login', 'account' );
 
 	public static function register(): void {
@@ -272,6 +275,7 @@ final class Rest {
 			'luggage'           => $opts['luggage'],
 			'carry_on'          => $opts['carry_on'],
 			'vulnerable_type'   => $opts['vulnerable_type'],
+			'vulnerable_detail' => $opts['vulnerable_detail'],
 			'pickup_at'         => $opts['pickup_utc'],
 			'return_at'         => $opts['return_utc'],
 			'stops'             => wp_json_encode( $stops ),
@@ -488,10 +492,19 @@ final class Rest {
 		}
 
 		$vulnerable = '';
+		$vdetail    = '';
 		if ( ! empty( $in['vulnerable'] ) ) {
 			$vulnerable = sanitize_key( (string) ( $in['vulnerable_type'] ?? '' ) );
 			if ( ! isset( self::VULNERABLE_TYPES[ $vulnerable ] ) ) {
 				return self::bad( __( 'Choose the type of vulnerable solo traveller, or untick the box.', 'sprint-booking' ) );
+			}
+			if ( 'other' === $vulnerable ) {
+				$vdetail = trim( (string) preg_replace( '/\s+/u', ' ', sanitize_text_field( (string) ( $in['vulnerable_detail'] ?? '' ) ) ) );
+				$vdetail = mb_substr( $vdetail, 0, self::VULNERABLE_DETAIL_MAX );
+				// Needed for a new booking. A quote or a staff edit of an older booking is not held up by it.
+				if ( $need_times && mb_strlen( $vdetail ) < 3 ) {
+					return self::bad( __( 'Please say what "Other" means for this traveller, so the driver can look after them.', 'sprint-booking' ) );
+				}
 			}
 		}
 
@@ -503,6 +516,7 @@ final class Rest {
 			'luggage'           => $luggage,
 			'carry_on'          => $carry_on,
 			'vulnerable_type'   => $vulnerable,
+			'vulnerable_detail' => $vdetail,
 			'is_return'         => ! empty( $in['is_return'] ),
 			'pickup_utc'        => null,
 			'return_utc'        => null,

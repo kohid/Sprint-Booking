@@ -138,6 +138,11 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 					</select>
 					<p class="sb-hint"><?php esc_html_e( 'Optional. We use this only to look after your journey, and it is passed to the dispatcher with your booking.', 'sprint-booking' ); ?></p>
 				</div>
+				<div class="sb-field" data-sb-vulnerable-other hidden>
+					<label for="<?php echo esc_attr( $uid ); ?>-vdetail"><?php esc_html_e( 'Please specify', 'sprint-booking' ); ?></label>
+					<input type="text" id="<?php echo esc_attr( $uid ); ?>-vdetail" name="vulnerable_detail" maxlength="120" autocomplete="off" placeholder="<?php esc_attr_e( 'For example: uses a wheelchair, or travelling with a guide dog', 'sprint-booking' ); ?>">
+					<p class="sb-hint"><?php esc_html_e( 'Tell us a little so the driver can look after you. Up to 120 characters.', 'sprint-booking' ); ?></p>
+				</div>
 			</div>
 		</section>
 
