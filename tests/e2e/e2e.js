@@ -268,9 +268,16 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   await page.click('[data-sb-next]'); await page.waitForSelector('[data-panel="3"]:not([hidden])');
   assert.strictEqual(await page.locator('[name=pickup_detail], [name=dropoff_detail]').count(), 0, 'full address fields are gone');
   // The summary: journey and return on tabs, the party / car / price in a table.
-  assert.deepStrictEqual(await page.locator('.sb-review-table th').allTextContents(), ['Passengers', 'Suitcases', 'Carry-on bags', 'Car', 'Distance', 'Fare'], 'table columns');
-  const cellsTxt = await page.locator('.sb-review-table td').allTextContents();
-  assert.strictEqual(cellsTxt[0], '5'); assert.strictEqual(cellsTxt[1], '5'); assert(/Minibus/.test(cellsTxt[3]), 'car shown'); assert(/miles/.test(cellsTxt[4]) && /£/.test(cellsTxt[5]) && /return included/.test(cellsTxt[5]), 'distance and fare: ' + cellsTxt.join(' | '));
+  assert.strictEqual(await page.locator('.sb-review-table').count(), 0, 'no table any more');
+  const trios = page.locator('.sb-rv-trio');
+  assert.strictEqual(await trios.count(), 2, 'two rows of three');
+  assert.deepStrictEqual(await trios.nth(0).locator('dt').allTextContents(), ['Passengers', 'Suitcases', 'Carry-on bags'], 'first row');
+  assert.deepStrictEqual(await trios.nth(1).locator('dt').allTextContents(), ['Car', 'Distance', 'Fare'], 'second row, at the bottom');
+  for (const i of [0, 1]) assert.strictEqual(await trios.nth(i).evaluate(g => getComputedStyle(g).gridTemplateColumns.split(' ').length), 3, 'three columns in row ' + (i + 1));
+  const xs = await trios.nth(1).locator('.sb-rv-stat').evaluateAll(n => n.map(x => Math.round(x.getBoundingClientRect().top)));
+  assert(xs[0] === xs[1] && xs[1] === xs[2], 'the three sit side by side: ' + xs);
+  const vals = await trios.locator('dd').allTextContents();
+  assert.strictEqual(vals[0], '5'); assert.strictEqual(vals[1], '5'); assert(/Minibus/.test(vals[3]) && /miles/.test(vals[4]) && /£/.test(vals[5]) && /return included/.test(vals[5]), 'values: ' + vals.join(' | '));
   assert.deepStrictEqual(await page.locator('.sb-rv-tabs .sb-tab').allTextContents(), ['Journey', 'Return journey'], 'a return gets two tabs');
   assert(/Pickup from/.test(await page.textContent('.sb-rv-panel:not([hidden])')) && !/Return time/.test(await page.textContent('.sb-rv-panel:not([hidden])')), 'the Journey tab shows the way out only');
   await page.click('.sb-rv-tabs .sb-tab >> text=Return journey');
@@ -283,8 +290,11 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   const vp = page.viewportSize();
   await page.setViewportSize({ width: 360, height: 900 }); await page.waitForTimeout(300);
   assert((await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0, 'no sideways scroll on a phone, step 3');
-  assert.strictEqual(await page.locator('.sb-review-table td').first().evaluate(c => getComputedStyle(c).display), 'grid', 'the table stacks into label/value rows on a phone');
-  assert.strictEqual(await page.locator('.sb-review-table td').first().evaluate(c => getComputedStyle(c, '::before').content), '"Passengers"', 'with its label beside each figure');
+  assert.strictEqual(await page.locator('.sb-rv-trio').nth(1).evaluate(g => getComputedStyle(g).gridTemplateColumns.split(' ').length), 3, 'still three columns on a phone');
+  const clipped = await page.locator('.sb-rv-stat').evaluateAll(n => n.filter(x => x.scrollWidth > x.clientWidth + 1).map(x => x.textContent));
+  assert.deepStrictEqual(clipped, [], 'nothing is cut off inside the boxes on a phone');
+  const words = await page.locator('.sb-rv-stat dt, .sb-rv-stat dd > span').evaluateAll(n => n.filter(x => { const t = x.textContent.trim(); if (/\s/.test(t) || t === 'Carry-on bags') { return false; } const r = document.createRange(); r.selectNodeContents(x); return new Set(Array.from(r.getClientRects()).map(q => Math.round(q.top))).size > 1; }).map(x => x.textContent));
+  assert.deepStrictEqual(words, [], 'single words and the fare are not split across lines: ' + words);
   await page.screenshot({ path: OUT + '/05b-step3-phone.png', fullPage: true });
   await page.setViewportSize(vp);
   const radios = await page.locator('input[name=account_mode]').evaluateAll(els => els.map(e => [e.value, e.nextElementSibling.textContent.trim(), e.checked]));

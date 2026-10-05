@@ -1146,24 +1146,28 @@
 			box.appendChild( outPanel );
 		}
 
-		// The party, the car and the price, as a table.
-		var dist = el( 'td', { 'data-label': 'Distance' } );
-		var fare = el( 'td', { 'data-label': 'Fare', 'class': 'sb-rv-fare' } );
-		if ( q ) {
-			dist.appendChild( el( 'span', { text: miles( q.distance_m ) + ' miles' } ) );
-			if ( q.return_distance_m ) { dist.appendChild( el( 'small', { text: miles( q.return_distance_m ) + ' miles back' } ) ); }
-			else if ( wantsReturn ) { dist.appendChild( el( 'small', { text: 'each way' } ) ); }
-			fare.appendChild( el( 'span', { text: q.quote_only ? 'To be quoted' : money( q.total_pence ) } ) );
-			if ( wantsReturn && ! q.quote_only ) { fare.appendChild( el( 'small', { text: 'return included' } ) ); }
-		} else {
-			dist.textContent = '—';
-			fare.textContent = '—';
+		// The party on one row, the car, distance and fare on another: three columns each.
+		function stat( label, value, note, cls ) {
+			var dd = el( 'dd', { 'class': cls || '' }, [ el( 'span', { text: value } ) ] );
+			if ( note ) { dd.appendChild( el( 'small', { text: note } ) ); }
+			return el( 'div', { 'class': 'sb-rv-stat' }, [ el( 'dt', { text: label } ), dd ] );
 		}
-		var heads = [ 'Passengers', 'Suitcases', 'Carry-on bags', 'Car', 'Distance', 'Fare' ];
-		var cells = [ el( 'td', { 'data-label': 'Passengers', text: String( num( 'passengers', 1 ) ) } ), el( 'td', { 'data-label': 'Suitcases', text: String( num( 'luggage', 0 ) ) } ), el( 'td', { 'data-label': 'Carry-on bags', text: String( num( 'carry_on', 0 ) ) } ), el( 'td', { 'data-label': 'Car', text: v ? v.label : '—' } ), dist, fare ];
-		box.appendChild( el( 'table', { 'class': 'sb-review-table' }, [
-			el( 'thead', {}, [ el( 'tr', {}, heads.map( function ( h ) { return el( 'th', { scope: 'col', text: h } ); } ) ) ] ),
-			el( 'tbody', {}, [ el( 'tr', {}, cells ) ] )
+		var distText = '—', distNote = '', fareText = '—', fareNote = '';
+		if ( q ) {
+			distText = miles( q.distance_m ) + ' miles';
+			distNote = q.return_distance_m ? miles( q.return_distance_m ) + ' miles back' : ( wantsReturn ? 'each way' : '' );
+			fareText = q.quote_only ? 'To be quoted' : money( q.total_pence );
+			fareNote = wantsReturn && ! q.quote_only ? 'return included' : '';
+		}
+		box.appendChild( el( 'dl', { 'class': 'sb-rv-trio' }, [
+			stat( 'Passengers', String( num( 'passengers', 1 ) ) ),
+			stat( 'Suitcases', String( num( 'luggage', 0 ) ) ),
+			stat( 'Carry-on bags', String( num( 'carry_on', 0 ) ) )
+		] ) );
+		box.appendChild( el( 'dl', { 'class': 'sb-rv-trio' }, [
+			stat( 'Car', v ? v.label : '—' ),
+			stat( 'Distance', distText, distNote ),
+			stat( 'Fare', fareText, fareNote, 'sb-rv-fare' )
 		] ) );
 
 		applyPayment();

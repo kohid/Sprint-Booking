@@ -679,23 +679,22 @@
 	.sb-vehicle-price { font-size: 0.95rem; }
 }
 
-/* ── Step 3 summary: journey tabs and the party / car / fare table ── */
+/* ── Step 3 summary: journey tabs, then two rows of three figures ── */
 .sb-app .sb-card .sb-rv-tabs { margin-bottom: 0.75rem; }
 .sb-app .sb-rv-panel[hidden] { display: none; }
-.sb-app .sb-review-table { width: 100%; margin: 1rem 0 0; border-collapse: collapse; table-layout: auto; background: var(--sb-white); border: 1px solid var(--sb-line); border-radius: var(--sb-radius); overflow: hidden; font-size: 0.92rem; }
-.sb-app .sb-review-table th, .sb-app .sb-review-table td { padding: 0.65rem 0.8rem; text-align: left; vertical-align: top; border: 0; }
-.sb-app .sb-review-table th { background: var(--sb-white); border-bottom: 1px solid var(--sb-line); color: var(--sb-slate); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
-.sb-app .sb-review-table td { font-weight: 600; overflow-wrap: anywhere; }
-.sb-app .sb-review-table td small { display: block; margin-top: 0.1rem; font-size: 0.76rem; font-weight: 500; color: var(--sb-slate); }
-.sb-app .sb-review-table td.sb-rv-fare { color: var(--sb-red-dark); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
-@media (max-width: 640px) {
-	/* Each figure on its own line, label on the left, so nothing scrolls sideways. */
-	.sb-app .sb-review-table, .sb-app .sb-review-table tbody, .sb-app .sb-review-table tr, .sb-app .sb-review-table td { display: block; width: 100%; }
-	.sb-app .sb-review-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-	.sb-app .sb-review-table td { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 0.75rem; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--sb-line); }
-	.sb-app .sb-review-table td:last-child { border-bottom: 0; }
-	.sb-app .sb-review-table td::before { content: attr(data-label); color: var(--sb-slate); font-weight: 400; }
-	.sb-app .sb-review-table td small { grid-column: 2; margin-top: -0.35rem; }
+.sb-app .sb-rv-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; margin: 0.85rem 0 0; padding: 0; }
+.sb-app .sb-rv-stat { min-width: 0; margin: 0; padding: 0.65rem 0.8rem; border: 1px solid var(--sb-line); border-radius: var(--sb-radius); background: var(--sb-white); }
+.sb-app .sb-rv-stat dt { margin: 0; color: var(--sb-slate); font-size: 0.74rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.sb-app .sb-rv-stat dd { margin: 0.2rem 0 0; font-size: 0.98rem; font-weight: 700; overflow-wrap: break-word; word-break: normal; }
+.sb-app .sb-rv-stat dd.sb-rv-fare span { white-space: nowrap; }
+.sb-app .sb-rv-stat dd small { display: block; margin-top: 0.1rem; font-size: 0.76rem; font-weight: 500; color: var(--sb-slate); }
+.sb-app .sb-rv-stat dd.sb-rv-fare { color: var(--sb-red-dark); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) {
+	.sb-app .sb-rv-trio { gap: 0.4rem; }
+	.sb-app .sb-rv-trio { gap: 0.3rem; }
+	.sb-app .sb-rv-stat { padding: 0.45rem 0.4rem; }
+	.sb-app .sb-rv-stat dt { font-size: 0.58rem; letter-spacing: 0; }
+	.sb-app .sb-rv-stat dd { font-size: 0.8rem; }
+	.sb-app .sb-rv-stat dd small { font-size: 0.68rem; }
+	.sb-app .sb-rv-stat dd.sb-rv-fare { font-size: 0.85rem; }
 }
-.sb-app .sb-review-table td.sb-rv-fare span, .sb-app .sb-review-table td[data-label="Distance"] span { white-space: nowrap; }
-@media (max-width: 640px) { .sb-app .sb-review-table td.sb-rv-fare span, .sb-app .sb-review-table td[data-label="Distance"] span { white-space: normal; } }

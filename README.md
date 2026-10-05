@@ -79,7 +79,7 @@ The dashboard shortcodes show a sign-in form to visitors and a "No access" notic
 
 ## The booking form
 
-**Form changes (v0.13).** Choosing "Other" as the vulnerable-traveller type shows a required "Please specify" box (3 to 120 characters, kept with the booking and shown to dispatch and in the emails). Available cars are always three across. On Passenger details the summary has a Journey tab and, for a return, a Return journey tab, with Passengers, Suitcases, Carry-on bags, Car, Distance and Fare in a table (stacked label/value rows on a phone).
+**Form changes (v0.13).** Choosing "Other" as the vulnerable-traveller type shows a required "Please specify" box (3 to 120 characters, kept with the booking and shown to dispatch and in the emails). Available cars are always three across. On Passenger details the summary has a Journey tab and, for a return, a Return journey tab, then two rows of three boxes: Passengers, Suitcases and Carry-on bags, and below them Car, Distance and Fare (three across on a phone too).
 
 - **Return journey:** tick "I also need a return journey" and the route splits into two tabs, Journey and Return journey. On the return tab, "The return follows the same route in reverse, with the same via stops" is ticked by default and fills the return route from the way out (read-only, updating as the way out changes). Untick it and the return route is empty: the customer enters their own pickup, via stops and drop-off, and the fare is worked out from that route's own distance.
 - **Name:** first name and last name are separate fields (stored together as one name).
