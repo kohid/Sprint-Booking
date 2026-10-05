@@ -144,6 +144,10 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   const nDays = await pickable.count(); await pickable.nth(nDays - 1).click();
   const pickedDate = await val(page, 'pickup_date'); assert(/^\d{4}-\d\d-\d\d$/.test(pickedDate), 'date stored as ISO: ' + pickedDate);
   const shown = await page.inputValue('input.sb-date-alt >> nth=0'); assert(shown.length > 6 && shown !== pickedDate, 'friendly date shown in the field: ' + shown);
+  await page.click('input.sb-time-alt >> nth=0'); await page.waitForSelector('.flatpickr-calendar.noCalendar.open'); await page.waitForTimeout(400);
+  const tw = await page.evaluate(() => { const c = document.querySelector('.flatpickr-calendar.noCalendar.open').getBoundingClientRect(), i = document.querySelector('input.sb-time-alt').getBoundingClientRect(); return { cw: c.width, iw: i.width, over: document.documentElement.scrollWidth - document.documentElement.clientWidth }; });
+  assert(tw.cw <= tw.iw + 1 && tw.over <= 0, 'time popup is no wider than its field and the page does not scroll sideways: ' + JSON.stringify(tw));
+  await page.screenshot({ path: OUT + '/03b-time.png', fullPage: true });
   await page.evaluate(() => document.querySelector('[name=pickup_time]')._flatpickr.setDate('09:30', true));
   assert.strictEqual(await val(page, 'pickup_time'), '09:30');
   const retMin = await page.evaluate(() => document.querySelector('[name=return_date]')._flatpickr.config.minDate);
@@ -277,6 +281,7 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert.strictEqual(b.airport_direction, 'arrival'); assert.strictEqual(b.vulnerable, true); assert.strictEqual(b.vulnerable_type, 'lone_female');
   assert(!('pickup_detail' in b) && !('dropoff_detail' in b), 'no address detail fields sent');
   assert(/^\d{4}-\d\d-\d\dT09:30$/.test(b.pickup_at) && /T23:55$/.test(b.return_at), 'times: ' + b.pickup_at + ' / ' + b.return_at);
+  assert.strictEqual(b.whatsapp, false, 'no WhatsApp opt-in box on a site without WhatsApp: the form sends false');
   assert(b.elapsed_ms >= 3000 && b.website === '' && b.terms === true);
   assert(!log.headers.some(h => h.nonce), 'guests send no nonce header');
 
@@ -436,6 +441,15 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert(await py5.locator('[data-sb-pay]').isHidden(), 'no payment choice when no gateway is on');
   assert.strictEqual((await py5.textContent('[data-sb-submit]')).trim(), 'Confirm booking');
   await p9.ctx.close();
+
+  // WhatsApp updates: offered only when the site has WhatsApp switched on.
+  const pw = (await newPage(browser)); await pw.page.goto(BASE + '/index-wa.html'); await pw.page.waitForSelector('.sb-stop');
+  assert.strictEqual(await pw.page.locator('[data-sb-whatsapp] input[name=whatsapp]').count(), 1, 'WhatsApp opt-in box is offered');
+  assert(/Reply STOP/.test(await pw.page.textContent('[data-sb-whatsapp]')), 'it says how to stop');
+  assert.strictEqual(await pw.page.evaluate(() => document.querySelector('[name=whatsapp]').checked), false, 'and it is not ticked for them');
+  const p00 = await newPage(browser); await p00.page.goto(BASE + '/index.html'); await p00.page.waitForSelector('.sb-stop');
+  assert.strictEqual(await p00.page.locator('[name=whatsapp]').count(), 0, 'no box without WhatsApp');
+  await pw.ctx.close(); await p00.ctx.close();
 
   // Coming back from the provider
   const p10 = await newPage(browser); const pb = p10.page;

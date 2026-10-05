@@ -60,6 +60,13 @@ Not built yet: the AI conversation itself (that lives in ElevenLabs), a customer
 
 **Calendar.** The date filters on the Bookings page and the edit form use the same calendar as the booking form.
 
+**WhatsApp (v0.11).** Settings → WhatsApp has a seven-step set-up guide, the keys, and a connect-and-test panel. Two providers: **Twilio** (the same account as the phone line; its sandbox lets you try it today) or the **Meta Cloud API**. Two uses, each on its own switch:
+
+- *Booking updates.* The booking form shows "Send my booking updates on WhatsApp" (unticked, never assumed). For those customers we message: booking received, confirmed, driver assigned, cancelled, changed by staff, payment received. Customers reply STOP to stop and START to resume; only a fingerprint of their number is kept. Outside WhatsApp's 24-hour window an approved template is required, so you enter its name (Meta) or Content SID (Twilio) and the text goes in its one variable.
+- *Booking assistant.* Customers message the number and get a menu: taxi now, taxi for later, cancel, change a pickup time, talk to a person. Bookings are made with the same checks, prices and emails as the website form (including returns with two references). Cancel and change use the same reference-plus-email rules as the website chat. Blocked numbers are ignored, a number is limited to 40 messages per ten minutes, and each provider message is processed once. Bookings made this way are badged WhatsApp in the dashboard, and the daily report counts them.
+
+Every incoming message is checked against the provider's signature (Twilio token or Meta app secret) before anything is read. Paste the webhook address from "Connect and test" into Twilio ("When a message comes in", POST) or Meta (Callback URL, plus the verify token it shows). It must be https. Keys are never shown again after saving, only their last four characters. WhatsApp, Twilio and Meta charge and approve business numbers on their own terms: check their current prices and rules first. Not yet built: tap-to-reply buttons and lists (replies are numbered text), and an AI free-text agent.
+
 **Demo data (Settings → Demo).** "Generate 60 demo bookings" makes 10 for each of the six services, one service at a time with progress, using your tariff and routing service. Customers are made up (reserved 07700 900xxx numbers, example.com emails), nothing is emailed and no payment is taken. Demo bookings carry a Demo badge, count in dashboard figures, and "Delete demo data" removes only rows marked demo.
 
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.
@@ -122,11 +129,15 @@ php tests/catalogue-test.php          # Settings -> Shortcodes matches registere
 php tests/voice-test.php              # phone numbers, blocked list, secret
 php tests/payment-test.php            # amounts, webhook signatures, redirect safety
 php tests/payment-flow-test.php       # the Payments class against simulated Stripe/PayPal
+php tests/whatsapp-rules-test.php     # WhatsApp: numbers, signatures, message parsing, "tomorrow 2pm"
+php tests/whatsapp-flow-test.php      # whole booking / cancel / change conversations
+php tests/whatsapp-webhook-test.php   # the WhatsApp class against simulated Twilio and Meta
+php tests/settings-whatsapp-test.php  # WhatsApp settings: cleaning, kept keys
 php tests/demo-test.php               # demo data plan
 # dashboard-test.php also covers cancel/change rules and the daily report
 ```
 
-Browser tests of the form (`e2e.js`), dashboard (`dashboard-e2e.js`) and chat (`chat-e2e.js`) are in `tests/e2e/` (see its README).
+Browser tests of the form (`e2e.js`), dashboard (`dashboard-e2e.js`), chat (`chat-e2e.js`), demo and the WhatsApp settings (`whatsapp-admin-e2e.js`) are in `tests/e2e/` (see its README).
 
 ## Structure
 

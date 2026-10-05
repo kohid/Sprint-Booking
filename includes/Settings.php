@@ -45,6 +45,21 @@ final class Settings {
 				'paypal'       => array( 'enabled' => false, 'sandbox' => true, 'sandbox_id' => '', 'sandbox_secret' => '', 'live_id' => '', 'live_secret' => '' ),
 			),
 			'dashboard_roles'         => array( 'sb_dispatcher' ),
+			'whatsapp'                => array(
+				'enabled'       => false,
+				'greeting'      => 'Hello! This is Inverness Taxis on WhatsApp.',
+				'provider'      => 'twilio',
+				'notify'        => true,
+				'assistant'     => true,
+				'template'      => '',
+				'template_lang' => 'en_GB',
+				'twilio_sid'    => '',
+				'twilio_token'  => '',
+				'twilio_from'   => '',
+				'meta_phone_id' => '',
+				'meta_token'    => '',
+				'meta_secret'   => '',
+			),
 			'voice'                   => array(
 				'enabled'          => false,
 				'greeting'         => 'Thank you for calling Inverness Taxis. How can I help you today?',
@@ -120,6 +135,7 @@ final class Settings {
 		// A blank box keeps the saved key; the tick box removes it.
 		$out['google_api_key']    = ! empty( $in['google_api_key_clear'] ) ? '' : ( '' !== $new_key ? $new_key : $stored_key );
 		$out['payments'] = self::sanitize_payments( (array) ( $in['payments'] ?? array() ), $d['payments'] );
+		$out['whatsapp'] = self::sanitize_whatsapp( (array) ( $in['whatsapp'] ?? array() ), $d['whatsapp'] );
 		$out['dashboard_roles'] = Roles::clean( $in['dashboard_roles'] ?? array(), array_keys( wp_roles()->get_names() ) );
 		$v      = (array) ( $in['voice'] ?? array() );
 		$out['voice'] = array(
@@ -178,6 +194,39 @@ final class Settings {
 		$out['paypal']['sandbox'] = ! empty( $in['paypal']['sandbox'] );
 		foreach ( array( 'sandbox_id', 'sandbox_secret', 'live_id', 'live_secret' ) as $f ) {
 			$out['paypal'][ $f ] = $secret( 'paypal', $f, $in, $old, $clear_paypal );
+		}
+		return $out;
+	}
+
+	/** Secret fields work like the payment keys: a blank box keeps what is saved; a tick box removes it. */
+	private static function sanitize_whatsapp( array $in, array $d ): array {
+		$stored = get_option( self::OPTION, array() );
+		$old    = is_array( $stored ) && is_array( $stored['whatsapp'] ?? null ) ? $stored['whatsapp'] : array();
+		$clear  = ! empty( $in['clear'] );
+		$secret = static function ( string $field ) use ( $in, $old, $clear ): string {
+			if ( $clear ) {
+				return '';
+			}
+			$new = mb_substr( preg_replace( '/[^A-Za-z0-9_\-.]/', '', (string) ( $in[ $field ] ?? '' ) ) ?? '', 0, 400 );
+			return '' !== $new ? $new : (string) ( $old[ $field ] ?? '' );
+		};
+		$out                  = $d;
+		$out['enabled']       = ! empty( $in['enabled'] );
+		$out['greeting']      = mb_substr( sanitize_textarea_field( (string) ( $in['greeting'] ?? $d['greeting'] ) ), 0, 300 );
+		$out['provider']      = in_array( $in['provider'] ?? '', WhatsAppRules::PROVIDERS, true ) ? $in['provider'] : 'twilio';
+		$out['notify']        = ! empty( $in['notify'] );
+		$out['assistant']     = ! empty( $in['assistant'] );
+		$out['template']      = mb_substr( preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) ( $in['template'] ?? '' ) ) ?? '', 0, 80 );
+		$lang                 = (string) ( $in['template_lang'] ?? 'en_GB' );
+		$out['template_lang'] = preg_match( '/^[a-z]{2,3}(_[A-Z]{2})?$/', $lang ) ? $lang : 'en_GB';
+		$out['twilio_sid']    = mb_substr( preg_replace( '/[^A-Za-z0-9]/', '', (string) ( $in['twilio_sid'] ?? '' ) ) ?? '', 0, 40 );
+		$out['twilio_from']   = mb_substr( preg_replace( '/[^0-9+() \-]/', '', (string) ( $in['twilio_from'] ?? '' ) ) ?? '', 0, 25 );
+		$out['meta_phone_id'] = mb_substr( preg_replace( '/\D/', '', (string) ( $in['meta_phone_id'] ?? '' ) ) ?? '', 0, 30 );
+		foreach ( array( 'twilio_token', 'meta_token', 'meta_secret' ) as $f ) {
+			$out[ $f ] = $secret( $f );
+		}
+		if ( $clear ) {
+			$out['twilio_sid'] = $out['twilio_from'] = $out['meta_phone_id'] = '';
 		}
 		return $out;
 	}

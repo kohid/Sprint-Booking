@@ -33,6 +33,10 @@ php tests/demo-test.php >/dev/null
 php tests/split-test.php >/dev/null
 php tests/edit-test.php >/dev/null
 php tests/editor-test.php >/dev/null
+php tests/whatsapp-rules-test.php >/dev/null
+php tests/whatsapp-flow-test.php >/dev/null
+php tests/whatsapp-webhook-test.php >/dev/null
+php tests/settings-whatsapp-test.php >/dev/null
 
 mkdir -p dist
 rm -f dist/sprint-booking.zip

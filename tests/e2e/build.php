@@ -22,7 +22,7 @@ function wp_unique_id($p=''){return $p.'1';}
 function get_bloginfo($k){return 'Inverness Taxis';}
 $root = dirname( __DIR__, 2 ) . '/';
 $services = ['airport'=>['label'=>'Airport Transfer'],'corporate'=>['label'=>'Corporate Service'],'golf'=>['label'=>'Golf Transfer'],'wedding'=>['label'=>'Wedding Cars'],'minibus'=>['label'=>'Minibus Service'],'tours'=>['label'=>'Inverness Tours']];
-$default='airport'; $max_vias=5;
+$default='airport'; $max_vias=5; $whatsapp = in_array( 'wa', $argv, true );
 ob_start(); include $root.'templates/booking-form.php'; $html = ob_get_clean();
 $cfg = [
  'rest'=>'http://localhost:8123/wp-json/sprint-booking/v1/','symbol'=>'£','maxVias'=>5,'freeLuggage'=>2,'luggageFee'=>150,'minLeadText'=>'1 hour',

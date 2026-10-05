@@ -1128,6 +1128,7 @@
 		if ( mode === 'register' || mode === 'login' ) { body.password = val( 'password' ); }
 		body.carry_on = num( 'carry_on', 0 );
 		body.terms = form.elements.terms.checked;
+		body.whatsapp = !! ( form.elements.whatsapp && form.elements.whatsapp.checked );
 		body.payment = $( '[data-sb-pay]' ).hidden ? 'driver' : payChoice();
 		body.return_to = window.location.origin + window.location.pathname;
 		body.elapsed_ms = Date.now() - state.startedAt;

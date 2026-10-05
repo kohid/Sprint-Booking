@@ -186,6 +186,7 @@ final class Editor {
 			$fresh = Bookings::find( $id );
 			if ( $fresh ) {
 				Mailer::booking_updated( $fresh, $changes );
+				do_action( 'sb_booking_updated', $fresh, $changes );
 			}
 		}
 		do_action( 'sb_booking_edited', $id, $changes );

@@ -20,6 +20,7 @@ final class Admin {
 		add_action( 'admin_menu', array( self::class, 'menu' ) );
 		add_action( 'admin_init', array( self::class, 'register_settings' ) );
 		add_action( 'admin_post_sb_pay_test', array( self::class, 'handle_pay_test' ) );
+		WhatsAppAdmin::init();
 		add_action( 'admin_post_sb_voice_secret', array( self::class, 'handle_voice_secret' ) );
 		add_action( 'admin_post_sb_test_email', array( self::class, 'handle_test_email' ) );
 		add_action( 'admin_post_sb_create_dashboard', array( self::class, 'handle_create_dashboard' ) );
@@ -304,6 +305,7 @@ final class Admin {
 			'services'   => __( 'Services', 'sprint-booking' ),
 			'payments'   => __( 'Payments', 'sprint-booking' ),
 			'voice'      => __( 'Phone agent', 'sprint-booking' ),
+			'whatsapp'   => __( 'WhatsApp', 'sprint-booking' ),
 			'email'      => __( 'Email', 'sprint-booking' ),
 			'shortcodes' => __( 'Shortcodes', 'sprint-booking' ),
 			'demo'       => __( 'Demo', 'sprint-booking' ),
@@ -315,6 +317,7 @@ final class Admin {
 		echo '</div><div>';
 
 		self::voice_setup_panel( $c, $panel_open, $panel_close );
+		WhatsAppAdmin::setup_panel( $c, $panel_open, $panel_close );
 
 		echo '<form method="post" action="options.php" data-sb-form>';
 		settings_fields( 'sb_settings_group' );
@@ -403,6 +406,8 @@ final class Admin {
 		$row( 'sb-voice-agent', __( 'ElevenLabs agent ID', 'sprint-booking' ), '<input id="sb-voice-agent" class="sb-ui-input" type="text" name="' . esc_attr( $name ) . '[voice][agent_id]" value="' . esc_attr( $v['agent_id'] ) . '">', __( 'For your reference. The Twilio account details go into ElevenLabs, not here.', 'sprint-booking' ) );
 		$panel_close();
 
+		WhatsAppAdmin::form_panel( $c, $name, $row, $panel_open, $panel_close );
+
 		echo '<div class="sb-ui-savebar" data-sb-savebar><button type="submit" class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Save changes', 'sprint-booking' ) . '</button></div>';
 		echo '</form>';
 
@@ -410,6 +415,7 @@ final class Admin {
 		self::payments_status_panel( $panel_open, $panel_close );
 		self::demo_panel( $c, $panel_open, $panel_close );
 		self::voice_connection_panel( $panel_open, $panel_close );
+		WhatsAppAdmin::connection_panel( $panel_open, $panel_close );
 		self::email_panel( $panel_open, $panel_close );
 
 		$panel_open( 'shortcodes', __( 'Shortcodes', 'sprint-booking' ), __( 'Every page of the plugin is a shortcode. In Elementor, add a Shortcode widget and paste one in. Or create a draft page here and open it in Elementor.', 'sprint-booking' ) );
@@ -445,7 +451,7 @@ final class Admin {
 	}
 
 	/** One secret field: never shows the saved value, only that one exists and its last four characters. */
-	private static function secret_input( string $id, string $label, string $name, string $saved, string $prefix_hint, string $help = '' ): string {
+	public static function secret_input( string $id, string $label, string $name, string $saved, string $prefix_hint, string $help = '' ): string {
 		$ph = '' !== $saved ? '•••• ' . substr( $saved, -4 ) . ' ' . __( '(saved, type to replace)', 'sprint-booking' ) : $prefix_hint;
 		return '<div class="sb-ui-row"><label for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label><div><input id="' . esc_attr( $id ) . '" class="sb-ui-input" type="password" autocomplete="new-password" spellcheck="false" name="' . esc_attr( $name ) . '" value="" placeholder="' . esc_attr( $ph ) . '">' . ( $help ? '<p class="sb-ui-help">' . esc_html( $help ) . '</p>' : '' ) . '</div></div>';
 	}
@@ -636,7 +642,7 @@ final class Admin {
 		}
 		echo '<div><dt>' . esc_html__( 'Header', 'sprint-booking' ) . '</dt><dd><code>Authorization: Bearer &lt;secret&gt;</code><br><span class="sb-ui-help">' . esc_html__( 'or X-SB-Secret: <secret>', 'sprint-booking' ) . '</span></dd></div></dl>';
 
-		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row" style="grid-template-columns:240px minmax(0,1fr)">';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row">';
 		wp_nonce_field( 'sb_voice_secret' );
 		echo '<input type="hidden" name="action" value="sb_voice_secret"><span class="sb-ui-label">' . esc_html__( 'Secret', 'sprint-booking' ) . '</span><div>';
 		echo $have ? '<span class="sb-d-badge sb-d-badge--success">' . esc_html__( 'A secret is set', 'sprint-booking' ) . '</span> ' : '<span class="sb-d-badge sb-d-badge--warning">' . esc_html__( 'No secret yet', 'sprint-booking' ) . '</span> ';
@@ -648,7 +654,7 @@ final class Admin {
 	private static function email_panel( callable $open, callable $close ): void {
 		$open( 'email', __( 'Email', 'sprint-booking' ), __( 'Booking emails go through WordPress, so your SMTP plugin (such as WP Mail SMTP with Brevo) delivers them. Send a test, then read the log below.', 'sprint-booking' ) );
 		$me = wp_get_current_user();
-		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row" style="grid-template-columns:240px minmax(0,1fr)">';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row">';
 		wp_nonce_field( 'sb_test_email' );
 		echo '<input type="hidden" name="action" value="sb_test_email"><label for="sb-test-to">' . esc_html__( 'Send a test email to', 'sprint-booking' ) . '</label><div><input id="sb-test-to" class="sb-ui-input" type="email" name="to" required value="' . esc_attr( $me->user_email ) . '"> <button class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Send test', 'sprint-booking' ) . '</button></div></form>';
 

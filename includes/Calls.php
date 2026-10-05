@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
 
 final class Calls {
 
-	public const SOURCES = array( 'phone', 'web_chat', 'chat' );
+	public const SOURCES = array( 'phone', 'web_chat', 'chat', 'whatsapp' );
 	private const KEEP_DAYS = 90;
 
 	public static function table(): string {

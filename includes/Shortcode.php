@@ -56,6 +56,7 @@ final class Shortcode {
 
 		ob_start();
 		$max_vias = (int) $cfg['max_vias'];
+		$whatsapp = WhatsApp::offers_updates();
 		include SB_DIR . 'templates/booking-form.php';
 		return (string) ob_get_clean();
 	}

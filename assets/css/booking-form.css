@@ -662,3 +662,7 @@
 
 .sb-app .sb-refs { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin: 0.5rem 0; }
 .sb-app .sb-refs .sb-ref { margin-top: 0.25rem; }
+
+/* The time-only popup is as wide as its field, so it can never push the page sideways. */
+.sb-app .flatpickr-calendar.noCalendar { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.sb-app .flatpickr-calendar.noCalendar .flatpickr-time { width: 100%; max-width: 100%; }

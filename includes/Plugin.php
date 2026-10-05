@@ -18,6 +18,7 @@ final class Plugin {
 		add_action( 'rest_api_init', array( ChatApi::class, 'register' ) );
 		add_action( 'rest_api_init', array( Payments::class, 'register' ) );
 		add_action( 'rest_api_init', array( Demo::class, 'register' ) );
+		add_action( 'rest_api_init', array( WhatsApp::class, 'register' ) );
 		ChatBooking::init();
 		Shortcode::init();
 		MyBookings::init();
@@ -31,6 +32,10 @@ final class Plugin {
 			2
 		);
 		add_action( 'sb_booking_status_changed', array( Mailer::class, 'status_changed' ), 10, 2 );
+		add_action( 'sb_booking_created', array( WhatsApp::class, 'booking_created' ), 10, 4 );
+		add_action( 'sb_booking_status_changed', array( WhatsApp::class, 'status_changed' ), 10, 2 );
+		add_action( 'sb_booking_updated', array( WhatsApp::class, 'booking_updated' ), 10, 2 );
+		add_action( 'sb_payment_received', array( WhatsApp::class, 'payment_received' ), 10, 2 );
 		Updater::init(); // Not admin-only: WordPress cron runs the update check too.
 
 		if ( is_admin() ) {

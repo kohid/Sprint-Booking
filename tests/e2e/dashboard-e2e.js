@@ -59,6 +59,7 @@ rows.forEach(r => { r.leg = 'single'; r.paired_ref = ''; r.history = []; });
   t.stops = o.stops.slice().reverse(); t.pickup = when(new Date(Date.now() + 3 * 86400000)); t.status = 'confirmed'; t.status_label = 'Confirmed';
   o.status = 'new'; o.status_label = 'New';
 }
+rows.find(r => r.id === 112).source = 'whatsapp';
 rows.find(r => r.id === 103).customer.name = 'Euan, "Wee" Ross'; // a name that needs CSV escaping
 
 const matches = (r, q) => !q || [r.reference, r.customer.name, r.customer.email, r.customer.phone, r.from, r.to].join(' ').toLowerCase().includes(q.toLowerCase());
@@ -242,6 +243,13 @@ async function findRef(page, ref) {
   assert.strictEqual(await page.locator('.sb-d-table tbody tr').count(), 1, 'the returns filter lists returns on their own');
   await page.selectOption('select[aria-label=Journeys]', '');
 
+  await findRef(page, 'SB-T1012');
+  assert(await page.locator('.sb-d-table .sb-d-badge', { hasText: 'WhatsApp' }).count() === 1, 'a booking made on WhatsApp is badged');
+  await page.click('.sb-d-table .sb-d-link'); await page.waitForSelector('.sb-d-drawer');
+  assert(/on WhatsApp/.test(await page.textContent('[data-sb-sub]')), 'the drawer says it came from WhatsApp');
+  await page.keyboard.press('Escape'); await page.waitForSelector('.sb-d-drawer', { state: 'detached' });
+  await page.fill('input[type=search]', '');
+
   // ── The booking form's calendar on the date filters ──
   assert.strictEqual(await page.locator('.sb-d-filters input[type=date]').count(), 0, 'no native date inputs');
   await page.click('input.sb-date-alt[aria-label="Pickups from"]');
@@ -263,7 +271,11 @@ async function findRef(page, ref) {
   assert(/Return/.test(await page.textContent('.sb-d-drawer__status')), 'the pair opens as the return leg');
   await page.click('[data-sb-edit]'); await page.waitForSelector('.sb-d-edit');
   assert(await page.locator('.sb-d-edit .flatpickr-wrapper').count() >= 2, 'the edit form uses the same calendar and a time picker');
+  await page.click('.sb-d-edit input.sb-time-alt'); await page.waitForSelector('.sb-d-edit .flatpickr-calendar.noCalendar.open'); await page.waitForTimeout(400);
+  const tp = await page.evaluate(() => { const c = document.querySelector('.sb-d-edit .flatpickr-calendar.noCalendar').getBoundingClientRect(), i = document.querySelector('.sb-d-edit input.sb-time-alt').getBoundingClientRect(), b = document.querySelector('.sb-d-drawer__body'); return { cw: c.width, iw: i.width, over: b.scrollWidth - b.clientWidth, right: c.right, bright: b.getBoundingClientRect().right }; });
+  assert(tp.cw <= tp.iw + 1 && tp.over <= 0 && tp.right <= tp.bright, 'time popup fits its field and the drawer does not scroll sideways: ' + JSON.stringify(tp));
   await page.screenshot({ path: OUT + '/d9-edit.png' });
+  await page.click('.sb-d-edit h3:has-text("Customer")');
   // Change the drop-off by choosing a suggestion; typing alone must not save an unchosen address.
   const last = page.locator('.sb-d-estop input').last();
   await last.fill('Test Harbour');

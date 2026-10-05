@@ -284,6 +284,7 @@ final class Payments {
 		$fresh = Bookings::find( (int) $b['id'] );
 		if ( $fresh ) {
 			Mailer::payment_received( $fresh, $pence, $did );
+			do_action( 'sb_payment_received', $fresh, $pence );
 		}
 		return true;
 	}

@@ -188,7 +188,7 @@
 	function renderDrawer( r ) {
 		var body = drawer.root.querySelector( '.sb-d-drawer__body' );
 		body.textContent = '';
-		drawer.root.querySelector( '[data-sb-sub]' ).textContent = 'Booked ' + r.created.day + ', ' + r.created.time;
+		drawer.root.querySelector( '[data-sb-sub]' ).textContent = 'Booked ' + r.created.day + ', ' + r.created.time + ( r.source === 'whatsapp' ? ' on WhatsApp' : '' );
 
 		var top = el( 'div', { 'class': 'sb-d-drawer__status' }, [ badge( r.status ) ] );
 		if ( NEXT_STEP[ r.status ] ) {
@@ -744,7 +744,7 @@
 		rows.forEach( function ( r ) {
 			var open = function ( e ) { if ( e.target.closest( 'a' ) ) { return; } openDrawer( r, e.currentTarget.querySelector( '.sb-d-link' ), function () { app.reload(); } ); };
 			var tr = el( 'tr', { 'class': 'sb-d-row', onclick: open }, [
-				el( 'td', {}, [ el( 'button', { type: 'button', 'class': 'sb-d-link', onclick: function ( e ) { e.stopPropagation(); openDrawer( r, e.currentTarget, function () { app.reload(); } ); }, text: r.reference } ), legBadge( r ), r.source === 'demo' ? el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-demo', text: 'Demo' } ) : null, el( 'div', { 'class': 'sb-d-muted', text: r.created.day + ' ' + r.created.time } ), r.paired_ref ? el( 'div', { 'class': 'sb-d-muted', text: ( r.leg === 'return' ? 'Way out ' : 'Return ' ) + r.paired_ref } ) : null ] ),
+				el( 'td', {}, [ el( 'button', { type: 'button', 'class': 'sb-d-link', onclick: function ( e ) { e.stopPropagation(); openDrawer( r, e.currentTarget, function () { app.reload(); } ); }, text: r.reference } ), legBadge( r ), r.source === 'demo' ? el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-demo', text: 'Demo' } ) : null, r.source === 'whatsapp' ? el( 'span', { 'class': 'sb-d-badge sb-d-badge--success sb-d-demo', text: 'WhatsApp' } ) : null, el( 'div', { 'class': 'sb-d-muted', text: r.created.day + ' ' + r.created.time } ), r.paired_ref ? el( 'div', { 'class': 'sb-d-muted', text: ( r.leg === 'return' ? 'Way out ' : 'Return ' ) + r.paired_ref } ) : null ] ),
 				el( 'td', {}, [ el( 'div', { 'class': 'sb-d-strong', text: r.pickup.day } ), el( 'div', { 'class': 'sb-d-muted', text: r.pickup.time + ( r.return ? ' · return ' + r.return.time : '' ) } ) ] ),
 				el( 'td', {}, [ el( 'div', { 'class': 'sb-d-who' }, [ avatar( r.customer.name, 'primary' ), el( 'div', { 'class': 'sb-d-who__text' }, [ el( 'div', { 'class': 'sb-d-strong sb-d-clip', text: customerName( r.customer ) } ), el( 'a', { 'class': 'sb-d-muted', href: 'tel:' + r.customer.phone.replace( /[^0-9+]/g, '' ), text: r.customer.phone } ) ] ) ] ) ] ),
 				el( 'td', { 'class': 'sb-d-cell-route' }, [ journeyList( r.stops ), r.vulnerable ? el( 'span', { 'class': 'sb-d-flag', text: '⚠ ' + r.vulnerable.label } ) : null ] ),

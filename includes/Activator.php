@@ -78,6 +78,7 @@ final class Activator {
 			paid_at DATETIME NULL,
 			leg VARCHAR(8) NOT NULL DEFAULT 'single',
 			paired_reference VARCHAR(24) NOT NULL DEFAULT '',
+			whatsapp_optin TINYINT(1) NOT NULL DEFAULT 0,
 			history LONGTEXT NULL,
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),

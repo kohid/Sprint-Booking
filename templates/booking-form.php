@@ -6,7 +6,7 @@
  * Three steps, same order as the Airport Taxis Inverness booking flow:
  * Journey Details → Choose Your Car → Passenger Details.
  *
- * Variables from Shortcode::render(): $services, $default, $max_vias.
+ * Variables from Shortcode::render(): $services, $default, $max_vias, $whatsapp.
  *
  * @package SprintBooking
  */
@@ -266,6 +266,13 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 				<textarea id="<?php echo esc_attr( $uid ); ?>-notes" name="notes" rows="3" maxlength="1000"></textarea>
 				<p class="sb-hint"><?php esc_html_e( 'For example child seats, with the age and weight of the child.', 'sprint-booking' ); ?></p>
 			</div>
+
+			<?php if ( ! empty( $whatsapp ) ) : ?>
+			<label class="sb-check" data-sb-whatsapp>
+				<input type="checkbox" name="whatsapp" value="1">
+				<span><?php esc_html_e( 'Send my booking updates on WhatsApp, to the phone number above. Reply STOP at any time to stop them.', 'sprint-booking' ); ?></span>
+			</label>
+			<?php endif; ?>
 
 			<label class="sb-check">
 				<input type="checkbox" name="terms" value="1" required>

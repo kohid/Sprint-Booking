@@ -11,13 +11,25 @@ $GLOBALS['opts']=['sb_settings'=>['payments'=>['allow_driver'=>true,'currency'=>
  'sb_pay_last_error'=>['time'=>time()-3600,'gateway'=>'PayPal','message'=>'Client Authentication failed']];
 $GLOBALS['trans']=['sb_paytest_1'=>['ok'=>true,'gateway'=>'stripe','message'=>'Stripe accepted the key (sandbox mode).']];
 spl_autoload_register(function($c){ $f=__DIR__.'/../../includes/'.str_replace('SprintBooking\\','',$c).'.php'; if(is_readable($f)) require $f; });
-use SprintBooking\Settings; use SprintBooking\Admin;
+function esc_js($s){return addslashes((string)$s);} function _n($a,$b,$n){return $n===1?$a:$b;} function wp_salt(){return 'salt';} function wp_generate_password($n=12){return str_repeat('x',$n);} function sanitize_textarea_field($s){return (string)$s;}
+use SprintBooking\Settings; use SprintBooking\Admin; use SprintBooking\WhatsAppAdmin;
 $c = Settings::get(); $name = Settings::OPTION;
 $row = function ( string $id, string $label, string $control, string $help = '' ): void { printf('<div class="sb-ui-row"><label for="%1$s">%2$s</label><div>%3$s%4$s</div></div>', esc_attr($id), esc_html($label), $control, $help ? '<p class="sb-ui-help">' . esc_html($help) . '</p>' : ''); };
 $open = function ( string $id, string $title, string $sub = '' ): void { printf('<section class="sb-ui-panel" data-sb-panel="%1$s" id="sb-panel-%1$s"><div class="sb-ui-panel__head"><h2>%2$s</h2>%3$s</div><div class="sb-ui-panel__body">', esc_attr($id), esc_html($title), $sub ? '<p>' . esc_html($sub) . '</p>' : ''); };
 $close = function (): void { echo '</div></section>'; };
 $call = function ( string $m, ...$a ) { $r = new ReflectionMethod( Admin::class, $m ); $r->setAccessible( true ); return $r->invoke( null, ...$a ); };
 echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="dashboard.css"><style>body{margin:0;background:#f5f8fa;font-family:system-ui,sans-serif;font-size:14px}</style></head><body><div class="sb-ui"><form>';
+if ( in_array( 'wa', $argv, true ) ) {
+	$GLOBALS['opts']['sb_settings']['whatsapp'] = [ 'enabled' => true, 'provider' => in_array( 'meta', $argv, true ) ? 'meta' : 'twilio', 'twilio_sid' => 'ACfake-test-sid', 'twilio_token' => 'tw_secret_token_9f3a', 'twilio_from' => '+14155238886', 'meta_phone_id' => '1234567890', 'meta_token' => 'EAAGsecrettoken7c2d', 'meta_secret' => 'appsecret5e1b', 'template' => 'booking_update' ];
+	$GLOBALS['opts']['sb_wa_verify'] = 'sbwa_verifytoken123'; $GLOBALS['opts']['sb_wa_error'] = [ 'time' => time() - 600, 'message' => 'Recipient is not a valid WhatsApp user' ]; $GLOBALS['opts']['sb_wa_optout'] = [ 'a', 'b' ];
+	$GLOBALS['trans']['sb_wa_result_1'] = [ 'ok' => true, 'message' => 'Twilio accepted the account SID and token (account is active).' ];
+	$c = Settings::get();
+	WhatsAppAdmin::setup_panel( $c, $open, $close );
+	echo '<form>'; WhatsAppAdmin::form_panel( $c, $name, $row, $open, $close ); echo '</form>';
+	WhatsAppAdmin::connection_panel( $open, $close );
+	echo '</div></body></html>';
+	return;
+}
 $call( 'payments_form_panel', $c, $name, $row, $open, $close );
 echo '</form>';
 $call( 'payments_status_panel', $open, $close );

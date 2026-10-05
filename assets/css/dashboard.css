@@ -819,3 +819,8 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 .sb-d-hist__meta { font-size: 0.76rem; color: var(--d-soft); }
 .sb-dash .sb-d-filters .sb-d-field .flatpickr-wrapper { display: block; width: 9.5rem; flex: none; }
 .sb-dash .sb-d-filters .sb-d-field .flatpickr-wrapper .sb-d-input { width: 100%; }
+
+/* The time-only popup is as wide as its field, so the drawer never scrolls sideways. */
+.sb-dash .flatpickr-calendar.noCalendar { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.sb-dash .flatpickr-calendar.noCalendar .flatpickr-time { width: 100%; max-width: 100%; }
+.sb-d-drawer__body { overflow-x: hidden; }

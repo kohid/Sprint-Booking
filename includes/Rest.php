@@ -290,7 +290,9 @@ final class Rest {
 			'flight_no'         => 'airport' === $opts['service'] ? $contact['flight_no'] : '',
 			'company'           => 'corporate' === $opts['service'] ? $contact['company'] : '',
 			'notes'             => $contact['notes'],
-			'source'            => in_array( $source, array( 'web', 'phone', 'chat', 'web_chat' ), true ) ? $source : 'web',
+			'source'            => in_array( $source, array( 'web', 'phone', 'chat', 'web_chat', 'whatsapp' ), true ) ? $source : 'web',
+			// Agreed to WhatsApp updates: ticked on the form, or implied by booking over WhatsApp.
+			'whatsapp_optin'    => ! empty( $in['whatsapp'] ) || 'whatsapp' === $source ? 1 : 0,
 			'payment_method'    => $pay,
 			'payment_status'    => in_array( $pay, PaymentRules::GATEWAYS, true ) ? 'pending' : 'unpaid',
 			'pay_token_hash'    => $pay_hash,
@@ -328,6 +330,7 @@ final class Rest {
 		$links     = ( ! $quote && Payments::any_online() ) ? Payments::links( $saved['reference'], $pay_plain, $return_to ) : array();
 		$row['pay_links'] = $links;
 		Mailer::booking_created( $row, $ret_row );
+		do_action( 'sb_booking_created', $row, $ret_row, $quote ? '' : Settings::money( (int) $q['total_pence'] ), ! empty( $links ) ); // WhatsApp, if the customer agreed to it.
 
 		return rest_ensure_response(
 			array(
