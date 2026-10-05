@@ -12,7 +12,7 @@ const STATUSES = {
   new: { label: 'New', tone: 'warning' }, quote_requested: { label: 'Quote requested', tone: 'info' }, confirmed: { label: 'Confirmed', tone: 'primary' },
   assigned: { label: 'Driver assigned', tone: 'teal' }, completed: { label: 'Completed', tone: 'success' }, cancelled: { label: 'Cancelled', tone: 'muted' },
 };
-const CONFIG = { rest: 'http://dash.test/wp-json/sprint-booking/v1/', nonce: 'n0nce', symbol: '£', site: 'Inverness Taxis', user: { name: 'Dee Dispatch', initials: 'DD' }, logoutUrl: '/logout', statuses: STATUSES, services: { airport: 'Airport Transfer', corporate: 'Corporate Service', golf: 'Golf Transfer', wedding: 'Wedding Cars', minibus: 'Minibus Service', tours: 'Inverness Tours' }, needsAction: ['new', 'quote_requested'] };
+const CONFIG = { rest: 'http://dash.test/wp-json/sprint-booking/v1/', nonce: 'n0nce', symbol: '£', site: 'Inverness Taxis', user: { name: 'Dee Dispatch', initials: 'DD' }, logoutUrl: '/logout', statuses: STATUSES, services: { airport: 'Airport Transfer', corporate: 'Corporate Service', golf: 'Golf Transfer', wedding: 'Wedding Cars', minibus: 'Minibus Service', tours: 'Inverness Tours' }, needsAction: ['new', 'quote_requested'], vehicles: { saloon: { label: 'Saloon', seats: 4, bags: 2, minibus: false }, mpv: { label: 'MPV', seats: 6, bags: 4, minibus: false }, minibus8: { label: 'Minibus (8 seats)', seats: 8, bags: 8, minibus: true } }, minibusOnly: { airport: false, corporate: false, wedding: false }, titles: ['Mr', 'Mrs', 'Dr'], maxVias: 3 };
 
 // ── Fake bookings (relative to now) ──
 const p2 = n => String(n).padStart(2, '0');
@@ -50,6 +50,15 @@ for (let i = 0; i < 34; i++) {
     payment: price !== null && i % 3 === 1 ? { method: 'stripe', status: 'paid', ref: 'cs_test_' + i, paid: true, paid_text: '£' + (price / 100).toFixed(2) } : (price !== null && i % 7 === 2 ? { method: 'paypal', status: 'pending', ref: 'ORD' + i, paid: false, paid_text: null } : { method: 'driver', status: 'unpaid', ref: '', paid: false, paid_text: null }),
   });
 }
+rows.forEach(r => { r.leg = 'single'; r.paired_ref = ''; r.history = []; });
+// A passenger with a return: two bookings, two references, each pointing at the other.
+{
+  const o = rows.find(r => r.id === 110), t = rows.find(r => r.id === 111);
+  o.leg = 'outbound'; o.paired_ref = t.reference; o.return = null; o.stops = [{ label: 'Test Airport, Dalcross', lat: 57.5, lng: -4.2 }, { label: 'Test Hotel, Nairn', lat: 57.4, lng: -4.1 }, { label: 'Test Castle, Inverness', lat: 57.3, lng: -4.0 }];
+  t.leg = 'return'; t.paired_ref = o.reference; t.return = null; t.service = o.service; t.service_label = o.service_label; o.customer = Object.assign({}, o.customer, { name: 'Pat Pairson' }); t.customer = o.customer;
+  t.stops = o.stops.slice().reverse(); t.pickup = when(new Date(Date.now() + 3 * 86400000)); t.status = 'confirmed'; t.status_label = 'Confirmed';
+  o.status = 'new'; o.status_label = 'New';
+}
 rows.find(r => r.id === 103).customer.name = 'Euan, "Wee" Ross'; // a name that needs CSV escaping
 
 const matches = (r, q) => !q || [r.reference, r.customer.name, r.customer.email, r.customer.phone, r.from, r.to].join(' ').toLowerCase().includes(q.toLowerCase());
@@ -59,6 +68,7 @@ function list(url) {
   const st = g('status');
   if (st === 'needs_action') out = out.filter(r => ['new', 'quote_requested'].includes(r.status)); else if (st) out = out.filter(r => st.split(',').includes(r.status));
   out = out.filter(r => matches(r, g('q')));
+  if (g('leg') === 'return') out = out.filter(r => r.leg === 'return'); else if (g('leg') === 'outbound') out = out.filter(r => r.leg !== 'return');
   if (g('from')) out = out.filter(r => r.pickup.iso.slice(0, 10) >= g('from'));
   if (g('to')) out = out.filter(r => r.pickup.iso.slice(0, 10) <= g('to'));
   const sort = g('sort') || 'newest';
@@ -77,7 +87,7 @@ function stats() {
 async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewport = { width: 1280, height: 900 } } = {}) {
   const ctx = await browser.newContext({ viewport, acceptDownloads: true });
   const page = await ctx.newPage();
-  const log = { errors: [], posts: [], urls: [], nonces: [] };
+  const log = { errors: [], edits: [], posts: [], urls: [], nonces: [] };
   page.on('pageerror', e => log.errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) log.errors.push('console: ' + m.text()); });
   const state = { fail };
@@ -88,8 +98,10 @@ async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewpo
       const URLS = 'data-overview-url="http://dash.test/overview/" data-bookings-url="http://dash.test/bookings/"';
       const pv = url.pathname === '/bookings/' ? 'bookings' : 'overview';
       const data = mode === 'paged' ? `data-shell="aside" data-view="${pv === 'overview' && url.pathname === '/' ? 'bookings' : pv}" ${URLS} data-full="site"` : mode === 'shell' ? `data-shell="aside" data-view="${pv}" ${URLS}` : mode === 'overview' ? 'data-shell="none" data-view="overview" data-bookings-url="http://dash.test/bookings/"' : 'data-shell="none" data-view="bookings" ' + attrs;
-      return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard harness</title><link rel="stylesheet" href="/dashboard.css"><style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#fff}</style></head><body><div class="sb-dash" data-sb-dash ${data}></div><script>window.SB_DASH=${JSON.stringify(CONFIG)}</script><script src="/dashboard.js"></script></body></html>` });
+      return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard harness</title><link rel="stylesheet" href="/flatpickr.css"><link rel="stylesheet" href="/dashboard.css"><style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#fff}</style></head><body><div class="sb-dash" data-sb-dash ${data}></div><script>window.SB_DASH=${JSON.stringify(CONFIG)}</script><script src="/flatpickr.js"></script><script src="/dashboard.js"></script></body></html>` });
     }
+    if (url.pathname === '/flatpickr.css') return route.fulfill({ contentType: 'text/css', body: fs.readFileSync(ROOT + '/assets/vendor/flatpickr/flatpickr.min.css') });
+    if (url.pathname === '/flatpickr.js') return route.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(ROOT + '/assets/vendor/flatpickr/flatpickr.min.js') });
     if (url.pathname === '/dashboard.css') return route.fulfill({ contentType: 'text/css', body: fs.readFileSync(ROOT + '/assets/css/dashboard.css') });
     if (url.pathname === '/dashboard.js') return route.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(ROOT + '/assets/js/dashboard.js') });
     if (url.pathname.includes('/wp-json/')) {
@@ -97,6 +109,20 @@ async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewpo
       if (state.fail) { state.fail = false; return json({ code: 'rest_forbidden', message: 'Sorry, you are not allowed to do that.' }, 403); }
       const ep = url.pathname.split('/v1/')[1];
       if (ep === 'admin/stats') return json(stats());
+      if (ep === 'geocode') return json({ results: [{ label: 'Test Harbour, Inverness', lat: 57.48, lng: -4.22 }, { label: 'Test Harbour Road, Nairn', lat: 57.58, lng: -3.87 }] });
+      const em = /^admin\/bookings\/(\d+)\/edit$/.exec(ep);
+      if (em && req.method() === 'POST') {
+        const body = req.postDataJSON(); log.edits.push(body);
+        const r = rows.find(x => x.id === +em[1]);
+        if (body.name === 'Boom') return json({ code: 'sb_invalid', message: 'Enter the customer\'s name.' }, 400);
+        const changes = [];
+        if (body.stops[body.stops.length - 1].label !== r.to) changes.push('Journey: ' + r.to + ' → ' + body.stops[body.stops.length - 1].label);
+        if (body.name !== r.customer.name) changes.push('Name: ' + r.customer.name + ' → ' + body.name);
+        if (body.preview || !changes.length) return json({ changes, price_pence: 4200, price_text: '£42.00', paid_gap: null, saved: false });
+        r.stops = body.stops; r.to = body.stops[body.stops.length - 1].label; r.customer.name = body.name;
+        r.history = [{ when: 'Today, 12:00', who: 'Dee Dispatch', changes }].concat(r.history);
+        return json({ changes, price_pence: 4200, price_text: '£42.00', paid_gap: null, saved: true, booking: r });
+      }
       if (ep === 'admin/bookings') return json(list(req.url()));
       const m = /^admin\/bookings\/(\d+)\/status$/.exec(ep);
       if (m && req.method() === 'POST') {
@@ -199,12 +225,76 @@ async function findRef(page, ref) {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => /Cancelled/.test(document.querySelector('.sb-d-table tbody').textContent), null, { timeout: 5000 });
 
+  // ── Return journeys: two references, shown separately, journey as a list ──
+  await page.click('.sb-d-nav__item >> text=Bookings'); await page.waitForSelector('.sb-d-table');
+  await page.fill('input[type=search]', 'Pairson'); await page.waitForFunction(() => document.querySelectorAll('.sb-d-table tbody tr').length === 2);
+  const legs = await page.locator('.sb-d-table tbody tr .sb-d-leg').allTextContents();
+  assert.deepStrictEqual(legs.sort(), ['Return', 'Way out'], 'each leg of the return is badged: ' + legs);
+  const wayOut = page.locator('.sb-d-table tbody tr', { has: page.locator('.sb-d-leg', { hasText: 'Way out' }) });
+  assert.strictEqual(await wayOut.locator('.sb-d-jl__row').count(), 3, 'pickup, via and drop-off are one to a line');
+  const ys = await wayOut.locator('.sb-d-jl__row').evaluateAll(n => n.map(x => Math.round(x.getBoundingClientRect().top)));
+  assert(ys[0] < ys[1] && ys[1] < ys[2], 'journey rows stack vertically: ' + ys);
+  assert(/SB-T1011/.test(await wayOut.textContent()), 'a leg shows its partner reference');
+  await page.screenshot({ path: OUT + '/d7-return-legs.png' });
+  await page.fill('input[type=search]', '');
+  await page.selectOption('select[aria-label=Journeys]', 'return');
+  await page.waitForFunction(() => { const b = [...document.querySelectorAll('.sb-d-table tbody .sb-d-leg')]; return b.length === 1 && b[0].textContent === 'Return'; });
+  assert.strictEqual(await page.locator('.sb-d-table tbody tr').count(), 1, 'the returns filter lists returns on their own');
+  await page.selectOption('select[aria-label=Journeys]', '');
+
+  // ── The booking form's calendar on the date filters ──
+  assert.strictEqual(await page.locator('.sb-d-filters input[type=date]').count(), 0, 'no native date inputs');
+  await page.click('input.sb-date-alt[aria-label="Pickups from"]');
+  await page.waitForSelector('.sb-d-filters .flatpickr-calendar.open');
+  assert(await page.locator('.sb-d-filters .flatpickr-day').count() >= 28, 'the calendar opens');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: OUT + '/d8-calendar.png' });
+  await page.click('.sb-d-filters .flatpickr-day.today');
+  assert(log.urls.some(u => /admin\/bookings\?.*from=\d{4}-\d\d-\d\d/.test(u)), 'picking a date filters the list');
+  await page.click('.sb-d-empty button, .sb-d-filters .sb-d-btn >> text=Clear').catch(() => {});
+  await page.waitForTimeout(300);
+
+  // ── Edit a booking at the customer's request ──
+  await findRef(page, 'SB-T1010');
+  await page.click('.sb-d-table .sb-d-link'); await page.waitForSelector('.sb-d-drawer');
+  assert(/SB-T1011/.test(await page.textContent('.sb-d-pairnote')), 'the drawer points to the other leg');
+  await page.click('.sb-d-pairnote .sb-d-link');
+  await page.waitForFunction(() => document.querySelector('#sb-d-drawer-title')?.textContent === 'SB-T1011');
+  assert(/Return/.test(await page.textContent('.sb-d-drawer__status')), 'the pair opens as the return leg');
+  await page.click('[data-sb-edit]'); await page.waitForSelector('.sb-d-edit');
+  assert(await page.locator('.sb-d-edit .flatpickr-wrapper').count() >= 2, 'the edit form uses the same calendar and a time picker');
+  await page.screenshot({ path: OUT + '/d9-edit.png' });
+  // Change the drop-off by choosing a suggestion; typing alone must not save an unchosen address.
+  const last = page.locator('.sb-d-estop input').last();
+  await last.fill('Test Harbour');
+  await page.click('.sb-d-sug button >> text=Test Harbour, Inverness');
+  await page.fill('.sb-d-edit input[type=text][value="' + ('Pat Pairson') + '"]', 'Ava Mackenzie-Smith');
+  await page.click('.sb-d-edit button >> text=Recalculate fare');
+  await page.waitForSelector('.sb-d-changes');
+  assert(/New fare: £42.00/.test(await page.textContent('[data-sb-preview]')), 'preview shows the new fare');
+  await page.click('.sb-d-edit button[type=submit]');
+  await page.waitForSelector('.sb-d-edit', { state: 'detached' });
+  assert(/updated/.test(await page.textContent('.sb-d-toast')), 'toast confirms the edit');
+  assert(/Test Harbour, Inverness/.test(await page.textContent('.sb-d-stops')), 'drawer shows the new route');
+  assert(/Ava Mackenzie-Smith/.test(await page.textContent('.sb-d-drawer__body')) && await page.locator('.sb-d-hist li').count() === 1, 'history lists the change');
+  assert.strictEqual(log.edits.filter(e => !e.preview).length, 1, 'saved once');
+  assert(log.edits.every(e => e.stops.every(s => typeof s.lat === 'number')), 'every stop sent has coordinates');
+  // A stop typed but not chosen is refused before anything is sent.
+  await page.click('[data-sb-edit]'); await page.waitForSelector('.sb-d-edit');
+  const editsBefore = log.edits.length;
+  await page.locator('.sb-d-estop input').last().fill('Somewhere I typed');
+  await page.click('.sb-d-edit button[type=submit]');
+  assert(/Choose an address/.test(await page.textContent('.sb-d-edit__msg')), 'an unchosen address is refused');
+  assert.strictEqual(log.edits.length, editsBefore, 'nothing was sent');
+  await page.click('.sb-d-edit button >> text=Cancel'); await page.waitForSelector('.sb-d-edit', { state: 'detached' });
+  await page.keyboard.press('Escape');
+
   // ── CSV export ──
   await page.fill('input[type=search]', ''); await page.waitForFunction(() => document.querySelectorAll('.sb-d-table tbody tr').length === 25);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('text=Export CSV')]);
   const csv = fs.readFileSync(await dl.path(), 'utf8');
   const lines = csv.replace(/^﻿/, '').split('\r\n');
-  assert(lines[0].startsWith('"Reference","Status","Service"'), 'CSV header');
+  assert(lines[0].startsWith('"Reference","Status","Journey","Paired reference","Service"'), 'CSV header');
   assert.strictEqual(lines.length, 35, 'every booking is exported, not just the page');
   assert(csv.includes('Euan, ""Wee"" Ross"'), 'commas and quotes are escaped');
   assert(csv.includes(`"'=HYPERLINK(`), 'a note starting with = cannot run as a spreadsheet formula');

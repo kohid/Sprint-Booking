@@ -228,6 +228,25 @@ final class DemoPlan {
 		);
 	}
 
+	/**
+	 * The bookings to store for one planned booking: one row, or two (way out and return) when it has a return,
+	 * exactly as a real booking with a return is stored.
+	 *
+	 * @param array{distance_m:int,duration_s:int,estimated:bool} $route
+	 * @return array{0:array<string,mixed>,1:array<string,mixed>|null}
+	 */
+	public static function rows( array $spec, array $cfg, array $route ): array {
+		$row = self::row( $spec, $cfg, $route );
+		$q   = Pricing::quote(
+			$cfg,
+			(int) $route['distance_m'],
+			array( 'service' => $spec['service'], 'vehicle' => $spec['vehicle'], 'vias' => null === $spec['via'] ? 0 : 1, 'luggage' => $spec['luggage'], 'is_return' => null !== $spec['return'] )
+		);
+		$q['distance_m'] = (int) $route['distance_m'];
+		$q['duration_s'] = (int) $route['duration_s'];
+		return BookingSplit::split( $row, self::stops( $spec ), null, $q );
+	}
+
 	/** @return array<int,array{label:string,lat:float,lng:float}> */
 	public static function stops( array $spec ): array {
 		$ids = null === $spec['via'] ? array( $spec['from'], $spec['to'] ) : array( $spec['from'], $spec['via'], $spec['to'] );

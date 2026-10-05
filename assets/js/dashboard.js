@@ -195,7 +195,19 @@
 			var step = NEXT_STEP[ r.status ];
 			top.appendChild( el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--primary', onclick: function () { setStatus( r, step[ 0 ] ); } }, [ icon( 'check' ), step[ 1 ] ] ) );
 		}
+		var lb = legBadge( r );
+		if ( lb ) { top.insertBefore( lb, top.firstChild.nextSibling ); }
+		if ( r.status !== 'cancelled' && r.status !== 'completed' ) {
+			top.appendChild( el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light', 'data-sb-edit': '', onclick: function () { renderEdit( r ); } }, [ icon( 'refresh' ), 'Edit' ] ) );
+		}
 		body.appendChild( top );
+
+		if ( r.paired_ref ) {
+			body.appendChild( el( 'div', { 'class': 'sb-d-pairnote' }, [
+				el( 'span', { text: ( r.leg === 'return' ? 'The way out is ' : 'The return is ' ) + r.paired_ref + '. ' } ),
+				el( 'button', { type: 'button', 'class': 'sb-d-link', onclick: function () { openPair( r ); } }, [ 'Open ' + r.paired_ref ] )
+			] ) );
+		}
 
 		if ( r.vulnerable ) {
 			body.appendChild( el( 'div', { 'class': 'sb-d-alert', role: 'note' }, [ icon( 'alert' ), el( 'div', {}, [ el( 'strong', { text: 'Vulnerable solo traveller' } ), el( 'div', { text: r.vulnerable.label } ) ] ) ] ) );
@@ -269,6 +281,166 @@
 			seg.appendChild( el( 'button', { type: 'button', 'class': 'sb-d-seg__btn sb-d-seg__btn--' + CFG.statuses[ k ].tone + ( k === r.status ? ' is-on' : '' ), 'aria-pressed': k === r.status ? 'true' : 'false', onclick: function () { if ( k !== r.status ) { setStatus( r, k ); } } }, [ CFG.statuses[ k ].label ] ) );
 		} );
 		body.appendChild( section( 'Status', [ seg ] ) );
+
+		if ( r.history && r.history.length ) {
+			var hl = el( 'ul', { 'class': 'sb-d-hist' } );
+			r.history.forEach( function ( h ) {
+				hl.appendChild( el( 'li', {}, [ el( 'div', { 'class': 'sb-d-hist__meta', text: h.when + ( h.who ? ' · ' + h.who : '' ) } ) ].concat( h.changes.map( function ( c ) { return el( 'div', { text: c } ); } ) ) ) );
+			} );
+			body.appendChild( section( 'History', [ hl ] ) );
+		}
+	}
+
+	function openPair( r ) {
+		api( 'admin/bookings?' + qs( { q: r.paired_ref, per_page: 5 } ) ).then( function ( res ) {
+			var hit = ( res.rows || [] ).filter( function ( x ) { return x.reference === r.paired_ref; } )[ 0 ];
+			if ( ! hit ) { toast( 'Could not find ' + r.paired_ref + '.', 'error' ); return; }
+			var cb = drawer.onChange;
+			openDrawer( hit, drawer.last, cb );
+		} ).catch( function ( err ) { toast( err.message, 'error' ); } );
+	}
+
+	// ── Edit a booking at the customer's request ────────────────
+
+	function field( label, input, cls ) {
+		return el( 'label', { 'class': 'sb-d-field ' + ( cls || '' ) }, [ el( 'span', { 'class': 'sb-d-field__label', text: label } ), input ] );
+	}
+
+	function renderEdit( r ) {
+		var body = drawer.root.querySelector( '.sb-d-drawer__body' );
+		body.textContent = '';
+		var stops = r.stops.map( function ( s ) { return { label: s.label, lat: s.lat, lng: s.lng }; } );
+		var form = el( 'form', { 'class': 'sb-d-edit', novalidate: true } );
+		var msg = el( 'div', { 'class': 'sb-d-edit__msg', role: 'status' } );
+		var pf = null, tf = null;
+
+		var d = el( 'input', { type: 'text', value: r.pickup.iso.slice( 0, 10 ), name: 'date' } );
+		var t = el( 'input', { type: 'text', value: r.pickup.iso.slice( 11 ), name: 'time' } );
+		var when = el( 'div', { 'class': 'sb-d-frow' }, [ field( 'Pickup date', d ), field( 'Pickup time', t ) ] );
+
+		// Stops, each with address suggestions.
+		var stopBox = el( 'div', { 'class': 'sb-d-estops' } );
+		function drawStops() {
+			stopBox.textContent = '';
+			stops.forEach( function ( s, i ) {
+				var role = i === 0 ? 'Pickup' : ( i === stops.length - 1 ? 'Drop-off' : 'Via ' + i );
+				var inp = el( 'input', { type: 'text', 'class': 'sb-d-input', value: s.label, autocomplete: 'off', 'aria-label': role } );
+				var list = el( 'ul', { 'class': 'sb-d-sug', hidden: true } );
+				var timer = null;
+				inp.addEventListener( 'input', function () {
+					s.lat = null; s.lng = null; s.label = inp.value;
+					clearTimeout( timer );
+					var q = inp.value.trim();
+					if ( q.length < 3 ) { list.hidden = true; return; }
+					timer = setTimeout( function () {
+						api( 'geocode?q=' + encodeURIComponent( q ) ).then( function ( res ) {
+							list.textContent = '';
+							( res.results || [] ).slice( 0, 6 ).forEach( function ( it ) {
+								list.appendChild( el( 'li', {}, [ el( 'button', { type: 'button', text: it.label, onclick: function () { s.label = it.label; s.lat = it.lat; s.lng = it.lng; inp.value = it.label; list.hidden = true; } } ) ] ) );
+							} );
+							list.hidden = ! list.childNodes.length;
+						} ).catch( function () { list.hidden = true; } );
+					}, 300 );
+				} );
+				var row = el( 'div', { 'class': 'sb-d-estop' }, [ el( 'span', { 'class': 'sb-d-jl__node sb-d-jl__node--' + ( i === 0 ? 'a' : ( i === stops.length - 1 ? 'b' : 'via' ) ), text: i === 0 ? 'A' : ( i === stops.length - 1 ? 'B' : String( i ) ) } ), el( 'div', { 'class': 'sb-d-estop__in' }, [ inp, list ] ) ] );
+				if ( i > 0 && i < stops.length - 1 ) {
+					row.appendChild( el( 'button', { type: 'button', 'class': 'sb-d-iconbtn', 'aria-label': 'Remove via ' + i, onclick: function () { stops.splice( i, 1 ); drawStops(); } }, [ icon( 'x' ) ] ) );
+				}
+				stopBox.appendChild( row );
+			} );
+			if ( stops.length - 2 < ( CFG.maxVias || 0 ) ) {
+				stopBox.appendChild( el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light', onclick: function () { stops.splice( stops.length - 1, 0, { label: '', lat: null, lng: null } ); drawStops(); } }, [ 'Add a via stop' ] ) );
+			}
+		}
+		drawStops();
+
+		// Car and party.
+		var veh = el( 'select', { 'class': 'sb-d-input', name: 'vehicle' } );
+		Object.keys( CFG.vehicles || {} ).forEach( function ( k ) {
+			var v = CFG.vehicles[ k ];
+			if ( CFG.minibusOnly && CFG.minibusOnly[ r.service ] && ! v.minibus ) { return; }
+			veh.appendChild( el( 'option', { value: k, text: v.label + ' (' + v.seats + ' seats)', selected: k === r.vehicle ? true : null } ) );
+		} );
+		function num( v, min ) { return el( 'input', { type: 'number', 'class': 'sb-d-input', min: min, max: 99, value: v } ); }
+		var pax = num( r.passengers, 1 ), lug = num( r.luggage, 0 ), carry = num( r.carry_on, 0 );
+		var party = el( 'div', { 'class': 'sb-d-frow' }, [ field( 'Car', veh ), field( 'Passengers', pax ), field( 'Suitcases', lug ), field( 'Carry-on', carry ) ] );
+
+		// Customer.
+		var title = el( 'select', { 'class': 'sb-d-input' }, [ el( 'option', { value: '', text: '—' } ) ].concat( ( CFG.titles || [] ).map( function ( x ) { return el( 'option', { value: x, text: x, selected: x === r.customer.title ? true : null } ); } ) ) );
+		var name = el( 'input', { type: 'text', 'class': 'sb-d-input', value: r.customer.name } );
+		var phone = el( 'input', { type: 'tel', 'class': 'sb-d-input', value: r.customer.phone } );
+		var email = el( 'input', { type: 'email', 'class': 'sb-d-input', value: r.customer.email } );
+		var flight = el( 'input', { type: 'text', 'class': 'sb-d-input', value: r.flight_no || '' } );
+		var company = el( 'input', { type: 'text', 'class': 'sb-d-input', value: r.company || '' } );
+		var notes = el( 'textarea', { 'class': 'sb-d-input', rows: 3, text: r.notes || '' } );
+		var fare = el( 'input', { type: 'text', 'class': 'sb-d-input', inputmode: 'decimal', placeholder: 'Leave blank to price it automatically' } );
+		var notify = el( 'input', { type: 'checkbox' } );
+
+		form.appendChild( section( 'Pickup', [ when ] ) );
+		form.appendChild( section( 'Journey', [ stopBox ] ) );
+		form.appendChild( section( 'Car and party', [ party ] ) );
+		var cust = [ el( 'div', { 'class': 'sb-d-frow' }, [ field( 'Title', title ), field( 'Name', name ) ] ), el( 'div', { 'class': 'sb-d-frow' }, [ field( 'Phone', phone ), field( 'Email', email ) ] ) ];
+		if ( r.service === 'airport' ) { cust.push( field( 'Flight', flight ) ); }
+		if ( r.service === 'corporate' ) { cust.push( field( 'Company', company ) ); }
+		cust.push( field( 'Notes', notes ) );
+		if ( r.paired_ref ) { cust.push( el( 'p', { 'class': 'sb-d-muted', text: 'Name, phone, email, company and notes are updated on ' + r.paired_ref + ' too.' } ) ); }
+		form.appendChild( section( 'Customer', cust ) );
+		form.appendChild( section( 'Fare', [ field( 'Set the fare (' + CFG.symbol + ')', fare ), el( 'div', { 'class': 'sb-d-preview', 'data-sb-preview': '' } ) ] ) );
+		form.appendChild( el( 'label', { 'class': 'sb-d-check' }, [ notify, ' Email the customer the changes' ] ) );
+		form.appendChild( msg );
+
+		var save = el( 'button', { type: 'submit', 'class': 'sb-d-btn sb-d-btn--primary' }, [ 'Save changes' ] );
+		var calc = el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light' }, [ 'Recalculate fare' ] );
+		var cancel = el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light', onclick: function () { renderDrawer( r ); } }, [ 'Cancel' ] );
+		form.appendChild( el( 'div', { 'class': 'sb-d-actions sb-d-actions--sticky' }, [ save, calc, cancel ] ) );
+		body.appendChild( form );
+
+		pf = datePicker( d, { minDate: null }, 'Pickup date' );
+		tf = timePicker( t, {}, 'Pickup time' );
+
+		function payload( preview ) {
+			var vals = [];
+			for ( var i = 0; i < stops.length; i++ ) {
+				if ( stops[ i ].lat === null ) { return { error: 'Choose an address from the suggestions for ' + ( stops[ i ].label || 'every stop' ) + '.' }; }
+				vals.push( { label: stops[ i ].label, lat: stops[ i ].lat, lng: stops[ i ].lng } );
+			}
+			if ( ! d.value || ! t.value ) { return { error: 'Choose a pickup date and time.' }; }
+			return { body: {
+				preview: preview, pickup_at: d.value + 'T' + t.value, stops: vals, vehicle: veh.value,
+				passengers: parseInt( pax.value, 10 ) || 1, luggage: parseInt( lug.value, 10 ) || 0, carry_on: parseInt( carry.value, 10 ) || 0,
+				title: title.value, name: name.value, phone: phone.value, email: email.value, flight_no: flight.value, company: company.value, notes: notes.value,
+				fare: fare.value, notify: notify.checked
+			} };
+		}
+
+		function run( preview ) {
+			var p = payload( preview );
+			if ( p.error ) { msg.textContent = p.error; msg.className = 'sb-d-edit__msg is-error'; return; }
+			msg.textContent = ''; msg.className = 'sb-d-edit__msg';
+			save.disabled = calc.disabled = true;
+			api( 'admin/bookings/' + r.id + '/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify( p.body ) } ).then( function ( res ) {
+				save.disabled = calc.disabled = false;
+				if ( preview ) {
+					var box = form.querySelector( '[data-sb-preview]' );
+					box.textContent = '';
+					if ( ! res.changes.length ) { box.appendChild( el( 'p', { 'class': 'sb-d-muted', text: 'Nothing has changed yet.' } ) ); return; }
+					box.appendChild( el( 'ul', { 'class': 'sb-d-changes' }, res.changes.map( function ( c ) { return el( 'li', { text: c } ); } ) ) );
+					if ( res.price_text ) { box.appendChild( el( 'p', { 'class': 'sb-d-strong', text: 'New fare: ' + res.price_text } ) ); }
+					return;
+				}
+				if ( ! res.saved ) { msg.textContent = 'Nothing was changed.'; return; }
+				Object.keys( r ).forEach( function ( k ) { delete r[ k ]; } );
+				Object.assign( r, res.booking );
+				renderDrawer( r );
+				toast( r.reference + ' updated' + ( res.paid_gap ? '. The fare differs from what was paid.' : '' ), res.paid_gap ? 'error' : 'success' );
+				if ( drawer.onChange ) { drawer.onChange( r ); }
+			} ).catch( function ( err ) {
+				save.disabled = calc.disabled = false;
+				msg.textContent = err.message; msg.className = 'sb-d-edit__msg is-error';
+			} );
+		}
+		form.addEventListener( 'submit', function ( e ) { e.preventDefault(); run( false ); } );
+		calc.addEventListener( 'click', function () { run( true ); } );
 	}
 
 	function setStatus( row, status ) {
@@ -286,6 +458,41 @@
 			Array.prototype.forEach.call( btns, function ( b ) { b.disabled = false; } );
 			toast( err.message, 'error' );
 		} );
+	}
+
+	// ── Calendar: the booking form's flatpickr, dressed the same ──
+
+	var PICKER_BASE = { 'static': true, locale: { firstDayOfWeek: 1 }, monthSelectorType: 'dropdown', allowInput: false };
+
+	function datePicker( input, opts, label ) {
+		if ( ! window.flatpickr ) { input.type = 'date'; return null; }
+		var f = window.flatpickr( input, Object.assign( {}, PICKER_BASE, { dateFormat: 'Y-m-d', altInput: true, altFormat: 'D j M Y', altInputClass: 'sb-d-input sb-date-alt' }, opts || {} ) );
+		if ( label && f.altInput ) { f.altInput.setAttribute( 'aria-label', label ); }
+		return f;
+	}
+
+	function timePicker( input, opts, label ) {
+		if ( ! window.flatpickr ) { input.type = 'time'; return null; }
+		var f = window.flatpickr( input, Object.assign( {}, PICKER_BASE, { enableTime: true, noCalendar: true, dateFormat: 'H:i', time_24hr: true, minuteIncrement: 5, altInput: true, altFormat: 'H:i', altInputClass: 'sb-d-input sb-time-alt' }, opts || {} ) );
+		if ( label && f.altInput ) { f.altInput.setAttribute( 'aria-label', label ); }
+		return f;
+	}
+
+	/** Way out / Return, for a booking that is one leg of a return. Nothing for one-way bookings. */
+	function legBadge( r ) {
+		if ( r.leg === 'return' ) { return el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-leg', text: 'Return' } ); }
+		if ( r.leg === 'outbound' ) { return el( 'span', { 'class': 'sb-d-badge sb-d-badge--teal sb-d-leg', text: 'Way out' } ); }
+		return null;
+	}
+
+	/** Pickup, via stops and drop-off, one to a line. */
+	function journeyList( stops ) {
+		var ol = el( 'ol', { 'class': 'sb-d-jl' } );
+		stops.forEach( function ( s, i ) {
+			var role = i === 0 ? 'a' : ( i === stops.length - 1 ? 'b' : 'via' );
+			ol.appendChild( el( 'li', { 'class': 'sb-d-jl__row' }, [ el( 'span', { 'class': 'sb-d-jl__node sb-d-jl__node--' + role, 'aria-hidden': 'true', text: role === 'a' ? 'A' : ( role === 'b' ? 'B' : String( i ) ) } ), el( 'span', { 'class': 'sb-d-jl__text', text: s.label } ) ] ) );
+		} );
+		return ol;
 	}
 
 	// ── Shared view pieces ──────────────────────────────────────
@@ -482,36 +689,43 @@
 		var search = el( 'input', { type: 'search', 'class': 'sb-d-input', placeholder: 'Search reference, name, phone, email or address', 'aria-label': 'Search bookings', value: f.q } );
 		var status = el( 'select', { 'class': 'sb-d-input', 'aria-label': 'Status' }, [ el( 'option', { value: '', text: 'All statuses' } ), el( 'option', { value: 'needs_action', text: 'Needs action (new + quotes)' } ) ].concat( Object.keys( CFG.statuses ).map( function ( k ) { return el( 'option', { value: k, text: CFG.statuses[ k ].label } ); } ) ) );
 		status.value = f.status;
-		var from = el( 'input', { type: 'date', 'class': 'sb-d-input', 'aria-label': 'Pickups from', value: f.from } );
-		var to = el( 'input', { type: 'date', 'class': 'sb-d-input', 'aria-label': 'Pickups to', value: f.to } );
+		var from = el( 'input', { type: 'text', 'class': 'sb-d-input', 'aria-label': 'Pickups from', placeholder: 'Any date', value: f.from, readonly: '' } );
+		var to = el( 'input', { type: 'text', 'class': 'sb-d-input', 'aria-label': 'Pickups to', placeholder: 'Any date', value: f.to, readonly: '' } );
+		var leg = el( 'select', { 'class': 'sb-d-input', 'aria-label': 'Journeys' }, [ el( 'option', { value: '', text: 'All journeys' } ), el( 'option', { value: 'outbound', text: 'One-way and way out' } ), el( 'option', { value: 'return', text: 'Returns only' } ) ] );
+		leg.value = f.leg || '';
 		var sort = el( 'select', { 'class': 'sb-d-input', 'aria-label': 'Sort' }, [ el( 'option', { value: 'newest', text: 'Newest bookings' } ), el( 'option', { value: 'pickup_asc', text: 'Pickup: soonest first' } ), el( 'option', { value: 'pickup_desc', text: 'Pickup: latest first' } ) ] );
 		sort.value = f.sort;
-		var clear = el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light', text: 'Clear', onclick: function () { app.filters = { q: '', status: '', from: '', to: '', sort: 'newest' }; app.page = 1; renderBookings( app, box ); } } );
+		var clear = el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light', text: 'Clear', onclick: function () { app.filters = { q: '', status: '', leg: '', from: '', to: '', sort: 'newest' }; app.page = 1; renderBookings( app, box ); } } );
 		var exportBtn = el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light', onclick: function () { exportCsv( app, exportBtn ); } }, [ icon( 'download' ), 'Export CSV' ] );
 
 		var timer = null;
 		search.addEventListener( 'input', function () { clearTimeout( timer ); timer = setTimeout( function () { f.q = search.value.trim(); app.page = 1; loadTable(); }, 300 ); } );
-		[ [ status, 'status' ], [ from, 'from' ], [ to, 'to' ], [ sort, 'sort' ] ].forEach( function ( p ) { p[ 0 ].addEventListener( 'change', function () { f[ p[ 1 ] ] = p[ 0 ].value; app.page = 1; loadTable(); } ); } );
-
+		[ [ status, 'status' ], [ leg, 'leg' ], [ sort, 'sort' ] ].forEach( function ( p ) { p[ 0 ].addEventListener( 'change', function () { f[ p[ 1 ] ] = p[ 0 ].value; app.page = 1; loadTable(); } ); } );
 		box.appendChild( el( 'div', { 'class': 'sb-d-card' }, [
 			el( 'div', { 'class': 'sb-d-filters' }, [
 				el( 'label', { 'class': 'sb-d-search' }, [ icon( 'search' ), search ] ),
-				status, el( 'label', { 'class': 'sb-d-field' }, [ el( 'span', { text: 'From' } ), from ] ), el( 'label', { 'class': 'sb-d-field' }, [ el( 'span', { text: 'To' } ), to ] ), sort, clear, exportBtn
+				status, leg, el( 'label', { 'class': 'sb-d-field' }, [ el( 'span', { text: 'From' } ), from ] ), el( 'label', { 'class': 'sb-d-field' }, [ el( 'span', { text: 'To' } ), to ] ), sort, clear, exportBtn
 			] ),
 			el( 'div', { 'class': 'sb-d-tablewrap', 'data-sb-table': '', 'aria-live': 'polite' } ),
 			el( 'div', { 'class': 'sb-d-pager', 'data-sb-pager': '' } )
 		] ) );
+
+		// Flatpickr needs the inputs in the page before it wraps them.
+		var fromPicker, toPicker;
+		fromPicker = datePicker( from, { defaultDate: f.from || null, onChange: function ( sel, str ) { f.from = str; if ( toPicker ) { toPicker.set( 'minDate', str || null ); } app.page = 1; loadTable(); } }, 'Pickups from' );
+		toPicker = datePicker( to, { defaultDate: f.to || null, minDate: f.from || null, onChange: function ( sel, str ) { f.to = str; if ( fromPicker ) { fromPicker.set( 'maxDate', str || null ); } app.page = 1; loadTable(); } }, 'Pickups to' );
+		if ( ! fromPicker ) { [ [ from, 'from' ], [ to, 'to' ] ].forEach( function ( p ) { p[ 0 ].removeAttribute( 'readonly' ); p[ 0 ].addEventListener( 'change', function () { f[ p[ 1 ] ] = p[ 0 ].value; app.page = 1; loadTable(); } ); } ); }
 
 		var wrap = box.querySelector( '[data-sb-table]' );
 		var pager = box.querySelector( '[data-sb-pager]' );
 
 		function loadTable() {
 			wrap.textContent = ''; wrap.appendChild( skeleton( 6 ) ); pager.textContent = '';
-			api( 'admin/bookings?' + qs( { status: f.status, q: f.q, from: f.from, to: f.to, sort: f.sort, page: app.page, per_page: app.perPage } ) ).then( function ( res ) {
+			api( 'admin/bookings?' + qs( { status: f.status, leg: f.leg, q: f.q, from: f.from, to: f.to, sort: f.sort, page: app.page, per_page: app.perPage } ) ).then( function ( res ) {
 				app.rows = res.rows;
 				wrap.textContent = '';
 				if ( ! res.rows.length ) {
-					var filtered = f.q || f.status || f.from || f.to;
+					var filtered = f.q || f.status || f.leg || f.from || f.to;
 					wrap.appendChild( empty( 'inbox', filtered ? 'No bookings match these filters' : 'No bookings yet', filtered ? 'Try a different search, or clear the filters.' : 'They will appear here as soon as the first one comes in.', filtered ? el( 'button', { type: 'button', 'class': 'sb-d-btn sb-d-btn--light', onclick: function () { clear.click(); }, text: 'Clear filters' } ) : null ) );
 					return;
 				}
@@ -530,10 +744,10 @@
 		rows.forEach( function ( r ) {
 			var open = function ( e ) { if ( e.target.closest( 'a' ) ) { return; } openDrawer( r, e.currentTarget.querySelector( '.sb-d-link' ), function () { app.reload(); } ); };
 			var tr = el( 'tr', { 'class': 'sb-d-row', onclick: open }, [
-				el( 'td', {}, [ el( 'button', { type: 'button', 'class': 'sb-d-link', onclick: function ( e ) { e.stopPropagation(); openDrawer( r, e.currentTarget, function () { app.reload(); } ); }, text: r.reference } ), r.source === 'demo' ? el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-demo', text: 'Demo' } ) : null, el( 'div', { 'class': 'sb-d-muted', text: r.created.day + ' ' + r.created.time } ) ] ),
+				el( 'td', {}, [ el( 'button', { type: 'button', 'class': 'sb-d-link', onclick: function ( e ) { e.stopPropagation(); openDrawer( r, e.currentTarget, function () { app.reload(); } ); }, text: r.reference } ), legBadge( r ), r.source === 'demo' ? el( 'span', { 'class': 'sb-d-badge sb-d-badge--info sb-d-demo', text: 'Demo' } ) : null, el( 'div', { 'class': 'sb-d-muted', text: r.created.day + ' ' + r.created.time } ), r.paired_ref ? el( 'div', { 'class': 'sb-d-muted', text: ( r.leg === 'return' ? 'Way out ' : 'Return ' ) + r.paired_ref } ) : null ] ),
 				el( 'td', {}, [ el( 'div', { 'class': 'sb-d-strong', text: r.pickup.day } ), el( 'div', { 'class': 'sb-d-muted', text: r.pickup.time + ( r.return ? ' · return ' + r.return.time : '' ) } ) ] ),
 				el( 'td', {}, [ el( 'div', { 'class': 'sb-d-who' }, [ avatar( r.customer.name, 'primary' ), el( 'div', { 'class': 'sb-d-who__text' }, [ el( 'div', { 'class': 'sb-d-strong sb-d-clip', text: customerName( r.customer ) } ), el( 'a', { 'class': 'sb-d-muted', href: 'tel:' + r.customer.phone.replace( /[^0-9+]/g, '' ), text: r.customer.phone } ) ] ) ] ) ] ),
-				el( 'td', { 'class': 'sb-d-cell-route' }, [ el( 'div', { 'class': 'sb-d-clip2', title: routeText( r ), text: routeText( r ) } ), r.vulnerable ? el( 'span', { 'class': 'sb-d-flag', text: '⚠ ' + r.vulnerable.label } ) : null ] ),
+				el( 'td', { 'class': 'sb-d-cell-route' }, [ journeyList( r.stops ), r.vulnerable ? el( 'span', { 'class': 'sb-d-flag', text: '⚠ ' + r.vulnerable.label } ) : null ] ),
 				el( 'td', {}, [ el( 'div', { text: r.service_label } ), el( 'div', { 'class': 'sb-d-muted', text: r.vehicle_label + ' · ' + r.passengers + ' pax' } ) ] ),
 				el( 'td', { 'class': 'sb-d-num' }, [ el( 'span', { 'class': 'sb-d-strong', text: r.price_text || 'Quote' } ), payBadge( r ) ] ),
 				el( 'td', {}, [ badge( r.status ) ] )
@@ -578,11 +792,11 @@
 	function exportCsv( app, btn ) {
 		var f = app.filters;
 		btn.disabled = true;
-		api( 'admin/bookings?' + qs( { status: f.status, q: f.q, from: f.from, to: f.to, sort: f.sort, page: 1, per_page: 2000, 'export': 1 } ) ).then( function ( res ) {
-			var head = [ 'Reference', 'Status', 'Service', 'Pickup', 'Return', 'From', 'To', 'Via stops', 'Miles', 'Return from', 'Return to', 'Fare', 'Payment', 'Passengers', 'Suitcases', 'Carry-on', 'Customer', 'Phone', 'Email', 'Flight', 'Company', 'Vulnerable', 'Notes', 'Booked' ];
+		api( 'admin/bookings?' + qs( { status: f.status, leg: f.leg, q: f.q, from: f.from, to: f.to, sort: f.sort, page: 1, per_page: 2000, 'export': 1 } ) ).then( function ( res ) {
+			var head = [ 'Reference', 'Status', 'Journey', 'Paired reference', 'Service', 'Pickup', 'Return', 'From', 'To', 'Via stops', 'Miles', 'Return from', 'Return to', 'Fare', 'Payment', 'Passengers', 'Suitcases', 'Carry-on', 'Customer', 'Phone', 'Email', 'Flight', 'Company', 'Vulnerable', 'Notes', 'Booked' ];
 			var lines = [ head.map( csvCell ).join( ',' ) ];
 			res.rows.forEach( function ( r ) {
-				lines.push( [ r.reference, r.status_label, r.service_label + ( r.direction ? ' (' + r.direction + ')' : '' ), r.pickup.iso.replace( 'T', ' ' ), r.return ? r.return.iso.replace( 'T', ' ' ) : '', r.from, r.to, r.vias, r.distance_mi, r.return_route ? r.return_route.from : '', r.return_route ? r.return_route.to : '', r.price_text || 'Quote', r.payment && r.payment.paid ? 'Paid (' + r.payment.method + ')' : ( r.payment && r.payment.method !== 'driver' ? 'Awaiting ' + r.payment.method : 'Pay the driver' ), r.passengers, r.luggage, r.carry_on, customerName( r.customer ), r.customer.phone, r.customer.email, r.flight_no, r.company, r.vulnerable ? r.vulnerable.label : '', r.notes, r.created.iso.replace( 'T', ' ' ) ].map( csvCell ).join( ',' ) );
+				lines.push( [ r.reference, r.status_label, r.leg === 'return' ? 'Return' : ( r.leg === 'outbound' ? 'Way out' : 'One way' ), r.paired_ref || '', r.service_label + ( r.direction ? ' (' + r.direction + ')' : '' ), r.pickup.iso.replace( 'T', ' ' ), r.return ? r.return.iso.replace( 'T', ' ' ) : '', r.from, r.to, r.vias, r.distance_mi, r.return_route ? r.return_route.from : '', r.return_route ? r.return_route.to : '', r.price_text || 'Quote', r.payment && r.payment.paid ? 'Paid (' + r.payment.method + ')' : ( r.payment && r.payment.method !== 'driver' ? 'Awaiting ' + r.payment.method : 'Pay the driver' ), r.passengers, r.luggage, r.carry_on, customerName( r.customer ), r.customer.phone, r.customer.email, r.flight_no, r.company, r.vulnerable ? r.vulnerable.label : '', r.notes, r.created.iso.replace( 'T', ' ' ) ].map( csvCell ).join( ',' ) );
 			} );
 			var blob = new Blob( [ '﻿' + lines.join( '\r\n' ) ], { type: 'text/csv;charset=utf-8' } );
 			var a = el( 'a', { href: URL.createObjectURL( blob ), download: 'bookings-' + new Date().toISOString().slice( 0, 10 ) + '.csv' } );
@@ -605,7 +819,7 @@
 			overviewUrl: root.getAttribute( 'data-overview-url' ) || '',
 			paged: shell === 'aside', // The menu moves between pages; there is no in-page switching or #hash.
 			perPage: parseInt( root.getAttribute( 'data-per-page' ), 10 ) || 25,
-			filters: { q: '', status: root.getAttribute( 'data-status' ) || '', from: '', to: '', sort: 'newest' },
+			filters: { q: '', status: root.getAttribute( 'data-status' ) || '', leg: '', from: '', to: '', sort: 'newest' },
 			page: 1,
 			rows: [],
 			stats: null,

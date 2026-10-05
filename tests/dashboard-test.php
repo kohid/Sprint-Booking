@@ -16,6 +16,7 @@ require __DIR__ . '/../includes/Dashboard.php';
 require __DIR__ . '/../includes/Roles.php';
 require __DIR__ . '/../includes/ManageRules.php';
 require __DIR__ . '/../includes/CallReport.php';
+require __DIR__ . '/../includes/History.php';
 
 use SprintBooking\BookingQuery;
 use SprintBooking\Presenter;
@@ -164,6 +165,7 @@ t( 'a non-list gives an empty list', array() === Roles::clean( null, $known ) &&
 
 // ── Customer cancel / change rules ──
 use SprintBooking\ManageRules as M;
+use SprintBooking\History;
 use SprintBooking\CallReport;
 $now = 1000000; $day = 86400;
 t( 'email match ignores case and spaces', M::emails_match( ' Test@Example.com ', 'test@example.com' ) );
@@ -178,6 +180,27 @@ t( 'change needs the usual notice', 'too_soon' === M::edit_block( 'new', $now + 
 t( 'assigned bookings need a phone call to change', 'assigned' === M::edit_block( 'assigned', $now + $day, $now, $now + 2 * $day, 60 ) );
 t( 'a year ahead is the limit', 'too_far' === M::edit_block( 'new', $now + $day, $now, $now + 400 * $day, 60 ) );
 t( 'closed bookings cannot be changed', 'closed' === M::edit_block( 'cancelled', $now + $day, $now, $now + 2 * $day, 60 ) );
+
+// ── The two legs of a return keep their order ──
+t( 'the return cannot be moved before the way out', 'before_outbound' === M::edit_block( 'confirmed', $now + $day, $now, $now + 2 * $day, 60, 'return', $now + 3 * $day ) );
+t( 'the return cannot be moved to the same moment as the way out', 'before_outbound' === M::edit_block( 'confirmed', $now + 5 * $day, $now, $now + 3 * $day, 60, 'return', $now + 3 * $day ) );
+t( 'the way out cannot be moved after the return', 'after_return' === M::edit_block( 'confirmed', $now + $day, $now, $now + 6 * $day, 60, 'outbound', $now + 5 * $day ) );
+t( 'moving within the order is fine', '' === M::edit_block( 'confirmed', $now + $day, $now, $now + 4 * $day, 60, 'outbound', $now + 5 * $day ) && '' === M::edit_block( 'confirmed', $now + 5 * $day, $now, $now + 6 * $day, 60, 'return', $now + 4 * $day ) );
+t( 'once the other leg is cancelled the order no longer matters', '' === M::edit_block( 'confirmed', $now + $day, $now, $now + 9 * $day, 60, 'outbound', null ) );
+t( 'a one-way booking ignores the order', '' === M::edit_block( 'confirmed', $now + $day, $now, $now + 2 * $day, 60, 'single', $now + 3 * $day ) );
+
+// ── Booking history ──
+$h = History::append( null, 'Dee Dispatch', array( 'Pickup: A → B' ), '2030-01-01 10:00:00' );
+$h = History::append( $h, 'Customer (web_chat)', array( 'Status: New → Confirmed', 'Notes changed' ), '2030-01-02 10:00:00' );
+$list = json_decode( $h, true );
+t( 'history keeps entries in order with who, when and what', 2 === count( $list ) && 'Dee Dispatch' === $list[0]['u'] && '2030-01-02 10:00:00' === $list[1]['t'] && 2 === count( $list[1]['c'] ) );
+$many = null; for ( $i = 0; $i < 60; $i++ ) { $many = History::append( $many, 'u', array( 'c' . $i ), '2030-01-01 10:00:00' ); }
+$ml = json_decode( $many, true );
+t( 'history keeps only the last 50', 50 === count( $ml ) && 'c59' === $ml[49]['c'][0] && 'c10' === $ml[0]['c'][0] );
+t( 'broken history is replaced, not fatal', 1 === count( json_decode( History::append( 'not json', 'u', array( 'x' ), '2030-01-01 10:00:00' ), true ) ) );
+$shown = Presenter::row( array( 'id' => 9, 'status' => 'new', 'stops' => '[]', 'pickup_at' => '2026-12-25 09:00:00', 'history' => $h, 'leg' => 'return', 'paired_reference' => 'SB-OUT123' ), $cfg, $tz, new DateTimeImmutable( '2026-10-02 12:00', $tz ) );
+t( 'the drawer sees history newest first, in site time', 'Customer (web_chat)' === $shown['history'][0]['who'] && 'Dee Dispatch' === $shown['history'][1]['who'] && str_contains( $shown['history'][1]['when'], '10:00' ) );
+t( 'a booking row says which leg it is and what it pairs with', 'return' === $shown['leg'] && 'SB-OUT123' === $shown['paired_ref'] && 'single' === $bare['leg'] && '' === $bare['paired_ref'] && array() === $bare['history'] );
 
 // ── Daily call report ──
 $days = CallReport::last_days( '2026-10-04', 3 );

@@ -29,7 +29,7 @@ final class BookingQuery {
 	public const MAX_EXPORT_ROWS = 2000;
 
 	/**
-	 * @param array<string,mixed> $a        Filters: status, q, from, to, user_id, sort.
+	 * @param array<string,mixed> $a        Filters: status, q, from, to, leg, user_id, sort.
 	 * @param callable            $esc_like Escapes % and _ for LIKE (wpdb::esc_like in WordPress).
 	 * @return array{where:string,params:array<int,mixed>,order:string}
 	 */
@@ -59,6 +59,14 @@ final class BookingQuery {
 			$like     = '%' . $esc_like( $q ) . '%';
 			$where[]  = '(reference LIKE %s OR customer_name LIKE %s OR customer_email LIKE %s OR customer_phone LIKE %s OR stops LIKE %s)';
 			array_push( $params, $like, $like, $like, $like, $like );
+		}
+
+		// Journeys: 'return' is the return legs only, 'outbound' is everything else (one-way bookings and ways out).
+		$leg = (string) ( $a['leg'] ?? '' );
+		if ( 'return' === $leg ) {
+			$where[] = "leg = 'return'";
+		} elseif ( 'outbound' === $leg ) {
+			$where[] = "leg <> 'return'";
 		}
 
 		$user_id = (int) ( $a['user_id'] ?? 0 );

@@ -100,6 +100,27 @@ final class Payments {
 		return $out;
 	}
 
+	/**
+	 * The bookings one payment covers: this booking and, for a return, its other leg, skipping any that is
+	 * cancelled, already paid or has no fare. The customer pays once for the whole trip.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function payable( array $b ): array {
+		$out = array();
+		foreach ( array( $b, Bookings::pair_of( $b ) ) as $m ) {
+			if ( is_array( $m ) && 'cancelled' !== $m['status'] && 'paid' !== $m['payment_status'] && null !== $m['price_pence'] && (int) $m['price_pence'] > 0 ) {
+				$out[] = $m;
+			}
+		}
+		return $out;
+	}
+
+	/** @param array<int,array<string,mixed>> $members */
+	private static function total( array $members ): int {
+		return (int) array_sum( array_map( static fn( $m ) => (int) $m['price_pence'], $members ) );
+	}
+
 	// ── Routes ────────────────────────────────────────────────────
 
 	public static function register(): void {
@@ -133,11 +154,10 @@ final class Payments {
 		if ( ! $b || ! self::token_ok( $b, $t ) || ! in_array( $g, PaymentRules::GATEWAYS, true ) || ! self::available()[ $g ] ) {
 			self::leave( self::landing( $ret, 'unavailable', $ref ) );
 		}
-		if ( 'paid' === $b['payment_status'] ) {
-			self::leave( self::landing( $ret, 'paid', $ref ) );
-		}
-		if ( 'cancelled' === $b['status'] || null === $b['price_pence'] || (int) $b['price_pence'] < 1 ) {
-			self::leave( self::landing( $ret, 'unavailable', $ref ) );
+		if ( ! self::payable( $b ) ) {
+			// Nothing left to pay: either it is all paid, or there is nothing payable (cancelled, a quote).
+			$pair = Bookings::pair_of( $b );
+			self::leave( self::landing( $ret, ( 'paid' === $b['payment_status'] || ( $pair && 'paid' === $pair['payment_status'] ) ) ? 'paid' : 'unavailable', $ref ) );
 		}
 
 		$url = self::start( $b, $g, $t, $ret );
@@ -153,8 +173,15 @@ final class Payments {
 	 * @return string|\WP_Error
 	 */
 	public static function start( array $b, string $gateway, string $plain_token, string $ret ) {
-		$cur  = (string) self::cfg()['currency'];
-		$desc = sprintf( /* translators: %s: booking reference */ __( 'Taxi booking %s', 'sprint-booking' ), $b['reference'] );
+		$cur     = (string) self::cfg()['currency'];
+		$members = self::payable( $b );
+		if ( ! $members ) {
+			return new \WP_Error( 'sb_pay', __( 'Nothing to pay.', 'sprint-booking' ) );
+		}
+		$refs = implode( ' + ', array_column( $members, 'reference' ) );
+		$desc = sprintf( /* translators: %s: booking reference(s) */ __( 'Taxi booking %s', 'sprint-booking' ), $refs );
+		// One payment for everything still to pay on this trip. The reference stays the one in the link.
+		$b['price_pence'] = self::total( $members );
 		$back = add_query_arg( array( 'g' => $gateway, 'ref' => $b['reference'], 't' => $plain_token, 'ret' => $ret ), rest_url( Rest::NS . '/pay/return' ) );
 		$none = add_query_arg( 'cancelled', '1', $back );
 		$c    = self::creds( $gateway );
@@ -167,7 +194,9 @@ final class Payments {
 				self::note_error( 'Stripe', is_wp_error( $res ) ? $res->get_error_message() : (string) ( $res['json']['error']['message'] ?? ( 'HTTP ' . $res['code'] ) ) );
 				return new \WP_Error( 'sb_pay', __( 'We could not start the payment.', 'sprint-booking' ) );
 			}
-			Bookings::set_payment( (int) $b['id'], array( 'payment_method' => 'stripe', 'payment_status' => 'pending', 'payment_ref' => (string) $res['json']['id'] ) );
+			foreach ( $members as $m ) {
+				Bookings::set_payment( (int) $m['id'], array( 'payment_method' => 'stripe', 'payment_status' => 'pending', 'payment_ref' => (string) $res['json']['id'] ) );
+			}
 			return $url;
 		}
 
@@ -187,7 +216,9 @@ final class Payments {
 			self::note_error( 'PayPal', is_wp_error( $res ) ? $res->get_error_message() : (string) ( $res['json']['message'] ?? ( 'HTTP ' . $res['code'] ) ) );
 			return new \WP_Error( 'sb_pay', __( 'We could not start the payment.', 'sprint-booking' ) );
 		}
-		Bookings::set_payment( (int) $b['id'], array( 'payment_method' => 'paypal', 'payment_status' => 'pending', 'payment_ref' => (string) $res['json']['id'] ) );
+		foreach ( $members as $m ) {
+			Bookings::set_payment( (int) $m['id'], array( 'payment_method' => 'paypal', 'payment_status' => 'pending', 'payment_ref' => (string) $res['json']['id'] ) );
+		}
 		return $url;
 	}
 
@@ -205,7 +236,7 @@ final class Payments {
 		if ( ! $b || ! self::token_ok( $b, $t ) || ! in_array( $g, PaymentRules::GATEWAYS, true ) ) {
 			self::leave( self::landing( $ret, 'unavailable', $ref ) );
 		}
-		if ( 'paid' === $b['payment_status'] ) {
+		if ( ! self::payable( $b ) && ( 'paid' === $b['payment_status'] || ( Bookings::pair_of( $b )['payment_status'] ?? '' ) === 'paid' ) ) {
 			self::leave( self::landing( $ret, 'paid', $ref ) );
 		}
 		if ( $req->get_param( 'cancelled' ) ) {
@@ -225,22 +256,34 @@ final class Payments {
 		if ( ! $r['ok'] || strtoupper( $r['reference'] ) !== strtoupper( (string) $b['reference'] ) ) {
 			return false;
 		}
-		if ( ! PaymentRules::paid_matches( (int) $b['price_pence'], $r['pence'], (string) self::cfg()['currency'], $r['currency'] ) ) {
-			self::note_error( ucfirst( $gateway ), sprintf( 'Amount mismatch on %s: expected %d %s, provider says %d %s.', $b['reference'], (int) $b['price_pence'], self::cfg()['currency'], $r['pence'], $r['currency'] ) );
+		$members = self::payable( $b );
+		if ( ! $members ) {
+			return true; // Already paid (the webhook and the return can both arrive).
+		}
+		$expected = self::total( $members );
+		if ( ! PaymentRules::paid_matches( $expected, $r['pence'], (string) self::cfg()['currency'], $r['currency'] ) ) {
+			self::note_error( ucfirst( $gateway ), sprintf( 'Amount mismatch on %s: expected %d %s, provider says %d %s.', $b['reference'], $expected, self::cfg()['currency'], $r['pence'], $r['currency'] ) );
 			return false;
 		}
 		self::mark_paid( $b, $gateway, $r['id'], $r['pence'] ); // False when it was already marked paid, which is fine too.
 		return true;
 	}
 
+	/** Mark everything this payment covers as paid, each booking with its own fare. One receipt for the trip. */
 	public static function mark_paid( array $b, string $method, string $ref, int $pence ): bool {
-		if ( ! Bookings::mark_paid_once( (int) $b['id'], $method, $ref, $pence ) ) {
+		$did   = array();
+		foreach ( self::payable( $b ) as $m ) {
+			if ( Bookings::mark_paid_once( (int) $m['id'], $method, $ref, (int) $m['price_pence'] ) ) {
+				$did[] = $m['reference'];
+				do_action( 'sb_booking_paid', (int) $m['id'], $method );
+			}
+		}
+		if ( ! $did ) {
 			return false;
 		}
-		do_action( 'sb_booking_paid', (int) $b['id'], $method );
 		$fresh = Bookings::find( (int) $b['id'] );
 		if ( $fresh ) {
-			Mailer::payment_received( $fresh );
+			Mailer::payment_received( $fresh, $pence, $did );
 		}
 		return true;
 	}

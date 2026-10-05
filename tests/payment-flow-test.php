@@ -42,11 +42,12 @@ namespace SprintBooking {
 	class Rest { const NS = 'sprint-booking/v1'; }
 	class RateLimit { public static function allow( $b, $m, $w ) { return true; } }
 	class Settings { public static $cfg; public static function get() { return self::$cfg; } }
-	class Mailer { public static $paid = array(); public static function payment_received( $b ) { self::$paid[] = $b['reference']; } }
+	class Mailer { public static $paid = array(); public static function payment_received( $b, $total = null, $refs = null ) { self::$paid[] = implode( '+', $refs ?: array( $b['reference'] ) ); self::$last_total = $total; } public static $last_total; }
 	class Bookings {
 		public static $rows = array();
 		public static function find_by_reference( $r ) { foreach ( self::$rows as $row ) { if ( $row['reference'] === strtoupper( $r ) ) { return $row; } } return null; }
 		public static function find( $id ) { return self::$rows[ $id ] ?? null; }
+		public static function pair_of( $b ) { return ( $b['paired_reference'] ?? '' ) === '' ? null : self::find_by_reference( $b['paired_reference'] ); }
 		public static function set_payment( $id, $f ) { self::$rows[ $id ] = array_merge( self::$rows[ $id ], $f ); return true; }
 		public static function mark_paid_once( $id, $m, $ref, $pence ) { if ( 'paid' === self::$rows[ $id ]['payment_status'] ) { return false; } self::$rows[ $id ] = array_merge( self::$rows[ $id ], array( 'payment_status' => 'paid', 'payment_method' => $m, 'payment_ref' => $ref, 'paid_pence' => $pence ) ); return true; }
 	}
@@ -207,6 +208,53 @@ namespace {
 	t( 'an already paid booking says paid and does not charge again', str_contains( $goreq( $b ), 'sb_pay=paid' ) );
 	Bookings::$rows[1]['payment_status'] = 'unpaid'; Http::$fake = fn() => array( 'code' => 500, 'body' => '{}' );
 	t( 'when the provider is down the customer comes back with an error, not a blank page', str_contains( $goreq( $b ), 'sb_pay=error' ) );
+
+	// ── A return is two bookings, paid once ──
+	function pair( array $o1 = array(), array $o2 = array() ): array {
+		[ $plain, $hash ] = Payments::new_token();
+		Bookings::$rows = array(
+			1 => array_merge( array( 'id' => 1, 'reference' => 'SB-OUT111', 'paired_reference' => 'SB-RET222', 'leg' => 'outbound', 'status' => 'new', 'price_pence' => 3000, 'customer_email' => 'a@example.com', 'payment_method' => 'driver', 'payment_status' => 'unpaid', 'payment_ref' => '', 'pay_token_hash' => $hash ), $o1 ),
+			2 => array_merge( array( 'id' => 2, 'reference' => 'SB-RET222', 'paired_reference' => 'SB-OUT111', 'leg' => 'return', 'status' => 'new', 'price_pence' => 1500, 'customer_email' => 'a@example.com', 'payment_method' => 'driver', 'payment_status' => 'unpaid', 'payment_ref' => '', 'pay_token_hash' => $hash ), $o2 ),
+		);
+		return array( $plain );
+	}
+	reset_state(); [ $plain ] = pair(); $started = array();
+	Http::$fake = function ( $m, $url, $h, $body ) use ( &$started ) { $started[] = $body; return array( 'code' => 200, 'body' => json_encode( array( 'id' => 'cs_test_pair', 'url' => 'https://checkout.stripe.com/c/pay/cs_test_pair' ) ) ); };
+	$g = fn( $ref ) => go( fn() => Payments::go( new WP_REST_Request( array( 'g' => 'stripe', 'ref' => $ref, 't' => $plain, 'ret' => 'https://site.test/book/' ) ) ) );
+	t( 'a pay link on a return starts one payment', 'https://checkout.stripe.com/c/pay/cs_test_pair' === $g( 'SB-OUT111' ) );
+	t( 'it charges both journeys together', str_contains( $started[0], 'unit_amount%5D=4500' ) );
+	t( 'and names both references', str_contains( urldecode( $started[0] ), 'SB-OUT111 + SB-RET222' ) );
+	t( 'both bookings are pending on the same session', 'pending' === Bookings::$rows[1]['payment_status'] && 'pending' === Bookings::$rows[2]['payment_status'] && 'cs_test_pair' === Bookings::$rows[2]['payment_ref'] );
+	$sess = fn( $over = array() ) => array_merge( array( 'id' => 'cs_test_pair', 'payment_status' => 'paid', 'amount_total' => 4500, 'currency' => 'gbp', 'client_reference_id' => 'SB-OUT111' ), $over );
+	$ret_pair = fn( $ref = 'SB-OUT111' ) => go( fn() => Payments::back( new WP_REST_Request( array( 'g' => 'stripe', 'ref' => $ref, 't' => $plain, 'ret' => 'https://site.test/book/', 'session_id' => 'cs_test_pair' ) ) ) );
+	Http::$fake = fn() => array( 'code' => 200, 'body' => json_encode( $sess( array( 'amount_total' => 3000 ) ) ) );
+	t( 'paying only the way out is NOT accepted for the pair', str_contains( $ret_pair(), 'sb_pay=failed' ) && 'paid' !== Bookings::$rows[1]['payment_status'] && 'paid' !== Bookings::$rows[2]['payment_status'] );
+	Http::$fake = fn() => array( 'code' => 200, 'body' => json_encode( $sess() ) );
+	Mailer::$paid = array();
+	t( 'paying the full amount marks both paid', str_contains( $ret_pair(), 'sb_pay=paid' ) && 'paid' === Bookings::$rows[1]['payment_status'] && 'paid' === Bookings::$rows[2]['payment_status'] );
+	t( 'each booking records its own fare as paid', 3000 === Bookings::$rows[1]['paid_pence'] && 1500 === Bookings::$rows[2]['paid_pence'] );
+	t( 'one receipt covers both, for the whole amount', array( 'SB-OUT111+SB-RET222' ) === Mailer::$paid && 4500 === Mailer::$last_total );
+	t( 'coming back again changes nothing and sends nothing more', str_contains( $ret_pair(), 'sb_pay=paid' ) && 1 === count( Mailer::$paid ) );
+	t( 'a pay link for a fully paid trip says paid', str_contains( $g( 'SB-RET222' ), 'sb_pay=paid' ) );
+
+	reset_state(); [ $plain ] = pair( array(), array( 'status' => 'cancelled' ) ); $g = fn( $ref ) => go( fn() => Payments::go( new WP_REST_Request( array( 'g' => 'stripe', 'ref' => $ref, 't' => $plain, 'ret' => 'https://site.test/book/' ) ) ) );
+	$onefake = function ( $m, $url, $h, $body ) use ( &$started ) { $started[] = $body; return array( 'code' => 200, 'body' => json_encode( array( 'id' => 'cs_test_one', 'url' => 'https://checkout.stripe.com/c/pay/cs_test_one' ) ) ); };
+	Http::$fake = $onefake;
+	$started = []; $g( 'SB-OUT111' );
+	t( 'a cancelled leg is left out of the payment', str_contains( $started[0], 'unit_amount%5D=3000' ) && 'unpaid' === Bookings::$rows[2]['payment_status'] );
+
+	reset_state(); [ $plain ] = pair( array( 'status' => 'cancelled' ), array() ); $started = []; Http::$fake = $onefake; $g = fn( $ref ) => go( fn() => Payments::go( new WP_REST_Request( array( 'g' => 'stripe', 'ref' => $ref, 't' => $plain, 'ret' => 'https://site.test/book/' ) ) ) );
+	t( 'the link on a cancelled way out still pays the return that is left', 'https://checkout.stripe.com/c/pay/cs_test_one' === $g( 'SB-OUT111' ) && str_contains( $started[0], 'unit_amount%5D=1500' ) );
+
+	reset_state(); [ $plain ] = pair( array( 'payment_status' => 'paid', 'paid_pence' => 3000 ), array() ); $started = []; Http::$fake = $onefake; $g = fn( $ref ) => go( fn() => Payments::go( new WP_REST_Request( array( 'g' => 'stripe', 'ref' => $ref, 't' => $plain, 'ret' => 'https://site.test/book/' ) ) ) );
+	$g( 'SB-RET222' );
+	t( 'a leg that is already paid is not charged again', str_contains( $started[0], 'unit_amount%5D=1500' ) );
+
+	reset_state(); [ $plain ] = pair( array( 'status' => 'cancelled' ), array( 'status' => 'cancelled' ) ); $g = fn( $ref ) => go( fn() => Payments::go( new WP_REST_Request( array( 'g' => 'stripe', 'ref' => $ref, 't' => $plain, 'ret' => 'https://site.test/book/' ) ) ) );
+	t( 'with both legs cancelled there is nothing to pay', str_contains( $g( 'SB-OUT111' ), 'sb_pay=unavailable' ) );
+
+	reset_state(); [ $plain ] = pair( array( 'price_pence' => null ), array( 'price_pence' => null ) ); $g = fn( $ref ) => go( fn() => Payments::go( new WP_REST_Request( array( 'g' => 'stripe', 'ref' => $ref, 't' => $plain, 'ret' => 'https://site.test/book/' ) ) ) );
+	t( 'a quote request pair has nothing to pay', str_contains( $g( 'SB-OUT111' ), 'sb_pay=unavailable' ) );
 
 	// ── Test connection ──
 	reset_state(); Http::$fake = fn() => array( 'code' => 200, 'body' => '{"id":"acct_1"}' );

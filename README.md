@@ -54,6 +54,12 @@ Not built yet: the AI conversation itself (that lives in ElevenLabs), a customer
 - **After payment:** the customer gets a receipt, the office gets a note, the dashboard shows a Paid / Awaiting payment badge, and the CSV has a Payment column. Cancelling a paid booking alerts the office that a refund is due; refunds themselves are made in Stripe or PayPal.
 - Tested with simulated Stripe and PayPal servers (`tests/payment-flow-test.php`). Run a sandbox payment before going live: the plugin cannot prove the providers' live responses match.
 
+**Return journeys (v0.10).** A return is stored as two bookings, each with its own reference: the way out and the return. Either reference can be used to cancel or change that journey alone; the customer's email, the booking form and the phone and chat assistants show both. One payment covers both journeys and each records its own share. On the Bookings page each leg is its own row with a Way out / Return badge, the partner reference beneath, and a Journeys filter. The Journey column lists pickup, via stops and drop-off one to a line. Bookings made before v0.10 stay as single rows.
+
+**Editing a booking (v0.10).** Open a booking and choose Edit to change the pickup time, route, car, party, contact details, notes or fare at the customer's request. "Recalculate fare" previews the new price (worked out again on the server with your tariff, or type a fare to override it). Contact details are copied to the other leg of a return, a return cannot be set before its way out, every change is kept in the booking's History, and the customer can be emailed the changes. If the fare changes on a paid booking the amount paid is kept and the difference is flagged. Completed and cancelled bookings cannot be edited.
+
+**Calendar.** The date filters on the Bookings page and the edit form use the same calendar as the booking form.
+
 **Demo data (Settings → Demo).** "Generate 60 demo bookings" makes 10 for each of the six services, one service at a time with progress, using your tariff and routing service. Customers are made up (reserved 07700 900xxx numbers, example.com emails), nothing is emailed and no payment is taken. Demo bookings carry a Demo badge, count in dashboard figures, and "Delete demo data" removes only rows marked demo.
 
 **Email:** Settings → Email sends a test message and lists the last 30 booking emails with any failure reason.

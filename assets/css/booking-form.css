@@ -659,3 +659,6 @@
 .sb-paylinks .sb-hint { margin: 0; flex-basis: 100%; }
 .sb-paylinks a { text-decoration: none; }
 @media (prefers-reduced-motion: reduce) { .sb-paycard { transition: none; } }
+
+.sb-app .sb-refs { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin: 0.5rem 0; }
+.sb-app .sb-refs .sb-ref { margin-top: 0.25rem; }

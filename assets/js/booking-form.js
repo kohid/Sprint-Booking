@@ -1154,8 +1154,17 @@
 		var done = $( '[data-sb-done]' );
 		done.textContent = '';
 		done.appendChild( el( 'h2', { text: res.quote_only ? 'Quote request received' : 'Booking received' } ) );
-		done.appendChild( el( 'p', { text: 'Your reference' } ) );
-		done.appendChild( el( 'div', { 'class': 'sb-ref', text: res.reference } ) );
+		if ( res.return_reference ) {
+			done.appendChild( el( 'p', { text: 'Your references, one for each journey' } ) );
+			done.appendChild( el( 'div', { 'class': 'sb-refs' }, [
+				el( 'div', {}, [ el( 'span', { 'class': 'sb-hint', text: 'Way out' } ), el( 'div', { 'class': 'sb-ref', text: res.reference } ) ] ),
+				el( 'div', {}, [ el( 'span', { 'class': 'sb-hint', text: 'Return' } ), el( 'div', { 'class': 'sb-ref', text: res.return_reference } ) ] )
+			] ) );
+			done.appendChild( el( 'p', { 'class': 'sb-hint', text: 'Use a journey\'s own reference to cancel or change just that journey.' } ) );
+		} else {
+			done.appendChild( el( 'p', { text: 'Your reference' } ) );
+			done.appendChild( el( 'div', { 'class': 'sb-ref', text: res.reference } ) );
+		}
 		var links = res.pay_links || {};
 		var online = res.payment === 'stripe' || res.payment === 'paypal';
 		done.appendChild( el( 'p', { text: res.quote_only

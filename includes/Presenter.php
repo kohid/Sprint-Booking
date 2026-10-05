@@ -77,6 +77,9 @@ final class Presenter {
 			'notes'        => (string) ( $r['notes'] ?? '' ),
 			'vulnerable'   => '' !== $vtype ? array( 'key' => $vtype, 'label' => (string) ( Rest::VULNERABLE_TYPES[ $vtype ] ?? $vtype ) ) : null,
 			'source'       => (string) ( $r['source'] ?? 'web' ),
+			'leg'          => (string) ( $r['leg'] ?? 'single' ),
+			'paired_ref'   => (string) ( $r['paired_reference'] ?? '' ),
+			'history'      => self::history( $r['history'] ?? null, $tz ),
 			'payment'      => array(
 				'method' => (string) ( $r['payment_method'] ?? 'driver' ),
 				'status' => (string) ( $r['payment_status'] ?? 'unpaid' ),
@@ -135,5 +138,31 @@ final class Presenter {
 			'vias'        => count( $stops ) - 2,
 			'distance_mi' => round( (int) ( $r['return_distance_m'] ?? 0 ) / Pricing::METRES_PER_MILE, 1 ),
 		);
+	}
+
+	/**
+	 * Edits and status changes, newest first, as shown in the drawer.
+	 *
+	 * @param mixed $raw JSON text of [{t,u,c:[...]}].
+	 * @return array<int,array{when:string,who:string,changes:string[]}>
+	 */
+	private static function history( $raw, \DateTimeZone $tz ): array {
+		$list = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $list ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( array_reverse( $list ) as $e ) {
+			if ( ! is_array( $e ) || empty( $e['t'] ) ) {
+				continue;
+			}
+			$dt    = ( new \DateTimeImmutable( (string) $e['t'], new \DateTimeZone( 'UTC' ) ) )->setTimezone( $tz );
+			$out[] = array(
+				'when'    => $dt->format( 'D j M, H:i' ),
+				'who'     => (string) ( $e['u'] ?? '' ),
+				'changes' => array_values( array_map( 'strval', (array) ( $e['c'] ?? array() ) ) ),
+			);
+		}
+		return array_slice( $out, 0, 20 );
 	}
 }

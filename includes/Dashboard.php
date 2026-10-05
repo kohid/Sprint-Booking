@@ -226,8 +226,11 @@ final class Dashboard {
 			$path = SB_DIR . $rel;
 			return is_readable( $path ) ? (string) filemtime( $path ) : SB_VERSION;
 		};
-		wp_enqueue_style( 'sb-dashboard', SB_URL . 'assets/css/dashboard.css', array(), $v( 'assets/css/dashboard.css' ) );
-		wp_enqueue_script( 'sb-dashboard', SB_URL . 'assets/js/dashboard.js', array(), $v( 'assets/js/dashboard.js' ), true );
+		// The same calendar as the booking form, for the date filters and the pickup time when editing.
+		wp_enqueue_style( 'sb-flatpickr', SB_URL . 'assets/vendor/flatpickr/flatpickr.min.css', array(), '4.6.13' );
+		wp_enqueue_script( 'sb-flatpickr', SB_URL . 'assets/vendor/flatpickr/flatpickr.min.js', array(), '4.6.13', true );
+		wp_enqueue_style( 'sb-dashboard', SB_URL . 'assets/css/dashboard.css', array( 'sb-flatpickr' ), $v( 'assets/css/dashboard.css' ) );
+		wp_enqueue_script( 'sb-dashboard', SB_URL . 'assets/js/dashboard.js', array( 'sb-flatpickr' ), $v( 'assets/js/dashboard.js' ), true );
 
 		static $done = false;
 		if ( $done ) {
@@ -260,6 +263,15 @@ final class Dashboard {
 			$services[ $key ] = $s['label'];
 		}
 
+		$vehicles = array();
+		foreach ( $cfg['vehicles'] as $key => $v ) {
+			$vehicles[ $key ] = array( 'label' => $v['label'], 'seats' => (int) $v['capacity'], 'bags' => (int) $v['bags'], 'minibus' => ! empty( $v['minibus'] ) );
+		}
+		$minibus_only = array();
+		foreach ( $cfg['services'] as $key => $s ) {
+			$minibus_only[ $key ] = ! empty( $s['minibus_only'] );
+		}
+
 		$name = (string) $user->display_name;
 		return array(
 			'rest'      => esc_url_raw( rest_url( Rest::NS . '/' ) ),
@@ -273,6 +285,10 @@ final class Dashboard {
 			'logoutUrl' => wp_logout_url( self::current_url() ),
 			'statuses'  => $statuses,
 			'services'  => $services,
+			'vehicles'  => $vehicles,
+			'minibusOnly' => $minibus_only,
+			'titles'    => Rest::TITLES,
+			'maxVias'   => (int) $cfg['max_vias'],
 			'needsAction' => BookingQuery::NEEDS_ACTION,
 		);
 	}

@@ -30,6 +30,9 @@ php tests/voice-test.php >/dev/null
 php tests/payment-test.php >/dev/null
 php tests/payment-flow-test.php >/dev/null
 php tests/demo-test.php >/dev/null
+php tests/split-test.php >/dev/null
+php tests/edit-test.php >/dev/null
+php tests/editor-test.php >/dev/null
 
 mkdir -p dist
 rm -f dist/sprint-booking.zip

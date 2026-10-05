@@ -31,8 +31,12 @@ final class ManageRules {
 		return '';
 	}
 
-	/** @return string '' when allowed, otherwise: closed, assigned, past, too_soon, too_far. */
-	public static function edit_block( string $status, int $pickup_ts, int $now_ts, int $new_ts, int $lead_minutes ): string {
+	/**
+	 * @param string   $leg      single, outbound or return.
+	 * @param int|null $pair_ts  Pickup time of the other leg while that leg is still open; null otherwise.
+	 * @return string '' when allowed, otherwise: closed, assigned, past, too_soon, too_far, before_outbound, after_return.
+	 */
+	public static function edit_block( string $status, int $pickup_ts, int $now_ts, int $new_ts, int $lead_minutes, string $leg = 'single', ?int $pair_ts = null ): string {
 		if ( in_array( $status, array( 'completed', 'cancelled' ), true ) ) {
 			return 'closed';
 		}
@@ -50,6 +54,15 @@ final class ManageRules {
 		}
 		if ( $new_ts > $now_ts + 366 * self::DAY ) {
 			return 'too_far';
+		}
+		// The two legs of a return keep their order: the way back is after the way out.
+		if ( null !== $pair_ts ) {
+			if ( 'return' === $leg && $new_ts <= $pair_ts ) {
+				return 'before_outbound';
+			}
+			if ( 'outbound' === $leg && $new_ts >= $pair_ts ) {
+				return 'after_return';
+			}
 		}
 		return '';
 	}

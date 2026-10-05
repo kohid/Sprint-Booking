@@ -26,7 +26,7 @@ final class Demo {
 	public static function counts(): array {
 		global $wpdb;
 		$table = Activator::table();
-		$rows  = (array) $wpdb->get_results( $wpdb->prepare( "SELECT service, COUNT(*) AS n FROM {$table} WHERE source = %s GROUP BY service", self::SOURCE ), ARRAY_A ); // phpcs:ignore WordPress.DB
+		$rows  = (array) $wpdb->get_results( $wpdb->prepare( "SELECT service, COUNT(*) AS n FROM {$table} WHERE source = %s AND leg <> 'return' GROUP BY service", self::SOURCE ), ARRAY_A ); // phpcs:ignore WordPress.DB
 		$out   = array();
 		foreach ( $rows as $r ) {
 			$out[ $r['service'] ] = (int) $r['n'];
@@ -76,9 +76,18 @@ final class Demo {
 				$network = false; // The router is not answering: estimate the rest instead of waiting on it ten times.
 				++$estimated;
 			}
-			$saved = Bookings::insert( DemoPlan::row( $spec, $cfg, $route ) );
+			list( $out_row, $ret_row ) = DemoPlan::rows( $spec, $cfg, $route );
+			$saved = Bookings::insert( $out_row );
 			if ( is_wp_error( $saved ) ) {
 				return $saved;
+			}
+			if ( $ret_row ) {
+				$ret_saved = Bookings::insert( $ret_row );
+				if ( is_wp_error( $ret_saved ) ) {
+					return $ret_saved;
+				}
+				Bookings::set_pair( (int) $saved['id'], $ret_saved['reference'] );
+				Bookings::set_pair( (int) $ret_saved['id'], $saved['reference'] );
 			}
 			++$created;
 		}

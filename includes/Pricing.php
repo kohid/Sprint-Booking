@@ -21,7 +21,7 @@ final class Pricing {
 	 *
 	 * @param array $cfg        Settings::get() shape.
 	 * @param int   $distance_m Total driving distance, pickup to final drop-off, via stops included.
-	 * @param array $opts       vias (int), vehicle (key), service (key), luggage (int), is_return (bool);
+	 * @param array $opts       vias (int), vehicle (key), service (key), luggage (int), is_return (bool), leg ('return' prices a stored return leg on its own);
 	 *                          optional return_distance_m and return_vias when the return takes its own route.
 	 * @return array{quote_only:bool, reason:?string, lines:array<int,array{key:string,pence:int}>, total_pence:?int}
 	 */
@@ -44,39 +44,33 @@ final class Pricing {
 		$is_return = ! empty( $opts['is_return'] );
 
 		$out     = self::journey( $cfg, $distance_m, $vias, $vehicle );
-		$base     = $out['base'];
-		$distance = $out['distance'];
-		$uplift   = $out['uplift'];
-		$min_adj  = $out['min_adj'];
-		$via_fee  = $out['via_fee'];
-		$journey  = $out['journey'];
+		$journey = $out['journey'];
+		$pct     = (int) $cfg['return_discount_percent'];
+
+		// A stored return leg priced on its own: the same fare formula for its own route, with the return
+		// discount, and no luggage fee (that is charged once, on the way out).
+		if ( 'return' === ( $opts['leg'] ?? '' ) ) {
+			$leg = (int) round( $journey * ( 100 - $pct ) / 100 );
+			return array(
+				'quote_only'  => false,
+				'reason'      => null,
+				'lines'       => self::leg_lines( $out, $leg - $journey ),
+				'total_pence' => $leg,
+			);
+		}
 
 		// A return on the same route (reversed) costs the same as the way out. A return on its own route is
 		// priced on its own distance and via stops, then the return discount applies to that leg.
-		$back = $journey;
+		$back_out = $out;
 		if ( $is_return && (int) ( $opts['return_distance_m'] ?? 0 ) > 0 ) {
-			$back = self::journey( $cfg, (int) $opts['return_distance_m'], max( 0, (int) ( $opts['return_vias'] ?? 0 ) ), $vehicle )['journey'];
+			$back_out = self::journey( $cfg, (int) $opts['return_distance_m'], max( 0, (int) ( $opts['return_vias'] ?? 0 ) ), $vehicle );
 		}
-		$return_leg = $is_return
-			? (int) round( $back * ( 100 - (int) $cfg['return_discount_percent'] ) / 100 )
-			: 0;
+		$return_leg = $is_return ? (int) round( $back_out['journey'] * ( 100 - $pct ) / 100 ) : 0;
 
-		$extra_bags = max( 0, $luggage - (int) $cfg['free_luggage'] );
+		$extra_bags  = max( 0, $luggage - (int) $cfg['free_luggage'] );
 		$luggage_fee = $extra_bags * (int) $cfg['luggage_fee_pence'];
 
-		$lines = array(
-			array( 'key' => 'base', 'pence' => $base ),
-			array( 'key' => 'distance', 'pence' => $distance ),
-		);
-		if ( $uplift > 0 ) {
-			$lines[] = array( 'key' => 'vehicle', 'pence' => $uplift );
-		}
-		if ( $min_adj > 0 ) {
-			$lines[] = array( 'key' => 'minimum', 'pence' => $min_adj );
-		}
-		if ( $via_fee > 0 ) {
-			$lines[] = array( 'key' => 'vias', 'pence' => $via_fee );
-		}
+		$lines = self::leg_lines( $out, 0 );
 		if ( $luggage_fee > 0 ) {
 			$lines[] = array( 'key' => 'luggage', 'pence' => $luggage_fee );
 		}
@@ -85,11 +79,41 @@ final class Pricing {
 		}
 
 		return array(
-			'quote_only'  => false,
-			'reason'      => null,
-			'lines'       => $lines,
-			'total_pence' => $journey + $return_leg + $luggage_fee,
+			'quote_only'     => false,
+			'reason'         => null,
+			'lines'          => $lines,
+			'total_pence'    => $journey + $return_leg + $luggage_fee,
+			// The same total, split by journey: each leg is a booking of its own.
+			'outbound_pence' => $journey + $luggage_fee,
+			'return_pence'   => $is_return ? $return_leg : null,
+			'return_lines'   => $is_return ? self::leg_lines( $back_out, $return_leg - $back_out['journey'] ) : null,
 		);
+	}
+
+	/**
+	 * The lines of one leg's fare. $discount is zero or negative.
+	 *
+	 * @param array{base:int,distance:int,uplift:int,min_adj:int,via_fee:int,journey:int} $j
+	 * @return array<int,array{key:string,pence:int}>
+	 */
+	private static function leg_lines( array $j, int $discount ): array {
+		$lines = array(
+			array( 'key' => 'base', 'pence' => $j['base'] ),
+			array( 'key' => 'distance', 'pence' => $j['distance'] ),
+		);
+		if ( $j['uplift'] > 0 ) {
+			$lines[] = array( 'key' => 'vehicle', 'pence' => $j['uplift'] );
+		}
+		if ( $j['min_adj'] > 0 ) {
+			$lines[] = array( 'key' => 'minimum', 'pence' => $j['min_adj'] );
+		}
+		if ( $j['via_fee'] > 0 ) {
+			$lines[] = array( 'key' => 'vias', 'pence' => $j['via_fee'] );
+		}
+		if ( 0 !== $discount ) {
+			$lines[] = array( 'key' => 'return_discount', 'pence' => $discount );
+		}
+		return $lines;
 	}
 
 	/**

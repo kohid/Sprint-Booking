@@ -648,3 +648,174 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 @keyframes sb-demo-pulse { 50% { opacity: 0.25; } }
 @media (max-width: 700px) { .sb-demo__row { grid-template-columns: 14px minmax(0, 1fr); } .sb-demo__bar, .sb-demo__note { grid-column: 2; text-align: left; } }
 @media (prefers-reduced-motion: reduce) { .sb-demo__fill { transition: none; } .sb-demo__row.is-working .sb-demo__dot { animation: none; } }
+
+
+/* ═══ Calendar: the same Metronic-style flatpickr as the booking form ═══ */
+/* Date and time fields (flatpickr alt inputs) */
+.sb-dash input.sb-date-alt,
+.sb-dash input.sb-time-alt {
+	cursor: pointer;
+	padding-right: 2.6rem;
+	background-repeat: no-repeat;
+	background-position: right 0.85rem center;
+	background-size: 1.15rem;
+}
+.sb-dash input.sb-date-alt { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%235b6775' d='M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 15H5V9h14zM5 7V6h14v1z'/%3E%3C/svg%3E"); }
+.sb-dash input.sb-time-alt { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%235b6775' d='M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm.5-13H11v6l5.2 3.1.8-1.3-4.5-2.7z'/%3E%3C/svg%3E"); }
+
+/* Calendar: flatpickr dressed like Metronic 8 (315px, 36px days, bold month dropdown, no arrow) */
+.sb-dash .flatpickr-calendar {
+	z-index: 30;
+	width: 315px;
+	font-family: inherit;
+	border: 0;
+	border-radius: var(--d-radius);
+	background: #fff;
+	box-shadow: 0 0 50px rgba(16, 24, 32, 0.16);
+}
+.sb-dash .flatpickr-calendar::before,
+.sb-dash .flatpickr-calendar::after { display: none; }
+.sb-dash .flatpickr-months { padding: 0.5rem 1rem 0; }
+.sb-dash .flatpickr-months .flatpickr-month { height: 46px; background: transparent; color: var(--d-muted); fill: var(--d-muted); }
+.sb-dash .flatpickr-months .flatpickr-prev-month,
+.sb-dash .flatpickr-months .flatpickr-next-month {
+	top: 1rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--d-radius);
+}
+.sb-dash .flatpickr-months .flatpickr-prev-month { left: 1rem; }
+.sb-dash .flatpickr-months .flatpickr-next-month { right: 1rem; }
+.sb-dash .flatpickr-months .flatpickr-prev-month svg,
+.sb-dash .flatpickr-months .flatpickr-next-month svg { width: 13px; height: 13px; fill: var(--d-muted); }
+.sb-dash .flatpickr-months .flatpickr-prev-month:hover,
+.sb-dash .flatpickr-months .flatpickr-next-month:hover { background: var(--d-page); }
+.sb-dash .flatpickr-months .flatpickr-prev-month:hover svg,
+.sb-dash .flatpickr-months .flatpickr-next-month:hover svg { fill: var(--d-red); }
+.sb-dash .flatpickr-current-month { font-weight: 700; color: inherit; }
+.sb-dash .flatpickr-current-month .flatpickr-monthDropdown-months {
+	margin-right: 0.5rem;
+	padding: 0.4rem 0.7rem;
+	border: 0;
+	border-radius: var(--d-radius);
+	background-color: #fff;
+	background-image: none;
+	font-size: 1rem;
+	font-weight: 700;
+	color: var(--d-ink);
+	outline: none;
+	min-height: 0;
+}
+.sb-dash .flatpickr-current-month .flatpickr-monthDropdown-months:hover { background-color: var(--d-page); }
+.sb-dash .flatpickr-current-month input.cur-year { font-size: 1.05rem; font-weight: 700; color: var(--d-ink); min-height: 0; padding: 0.4rem 0.5rem; }
+.sb-dash .flatpickr-innerContainer { padding: 0.5rem 1rem; }
+.sb-dash .flatpickr-days,
+.sb-dash .dayContainer { width: 100%; min-width: 100%; max-width: 100%; }
+.sb-dash span.flatpickr-weekday { font-size: 0.9rem; font-weight: 700; color: var(--d-ink); }
+.sb-dash .flatpickr-day {
+	max-width: 36px;
+	height: 36px;
+	line-height: 36px;
+	border-radius: var(--d-radius);
+	font-size: 0.95rem;
+	color: var(--d-ink);
+	box-shadow: none;
+}
+.sb-dash .flatpickr-day.prevMonthDay,
+.sb-dash .flatpickr-day.nextMonthDay,
+.sb-dash .flatpickr-day.flatpickr-disabled,
+.sb-dash .flatpickr-day.flatpickr-disabled:hover { color: #aab3bd; }
+.sb-dash .flatpickr-day:hover,
+.sb-dash .flatpickr-day:focus { background: var(--d-red-light); border-color: transparent; color: var(--d-red-dark); }
+.sb-dash .flatpickr-day.today { background: var(--d-page); border-color: transparent; color: var(--d-ink); font-weight: 700; }
+.sb-dash .flatpickr-day.today:hover { background: var(--d-line2); }
+.sb-dash .flatpickr-day.selected,
+.sb-dash .flatpickr-day.selected:hover,
+.sb-dash .flatpickr-day.selected:focus { background: var(--d-red); border-color: transparent; color: #fff; font-weight: 700; }
+.sb-dash .flatpickr-day.flatpickr-disabled:hover { background: transparent; }
+.sb-dash .flatpickr-time { border-top: 1px solid var(--d-page); border-radius: 0 0 var(--d-radius) var(--d-radius); }
+.sb-dash .flatpickr-time input { min-height: 0; padding: 0; border: 0; font-size: 1.05rem; font-weight: 700; color: var(--d-ink); box-shadow: none; }
+.sb-dash .flatpickr-time input:hover,
+.sb-dash .flatpickr-time input:focus,
+.sb-dash .flatpickr-time .flatpickr-am-pm:hover { background: transparent; }
+.sb-dash .flatpickr-time .flatpickr-time-separator { font-weight: 700; color: var(--d-ink); }
+.sb-dash .numInputWrapper span { border: 0; }
+.sb-dash .numInputWrapper span:hover { background: transparent; }
+.sb-dash .numInputWrapper span.arrowUp::after { border-bottom-color: var(--d-muted); }
+.sb-dash .numInputWrapper span.arrowDown::after { border-top-color: var(--d-muted); }
+.sb-dash .numInputWrapper:hover { background: transparent; }
+
+/* Calendar year/time fields must not pick up the general input styles */
+.sb-dash .flatpickr-calendar .numInputWrapper input,
+.sb-dash .flatpickr-calendar .flatpickr-time input {
+	display: inline-block;
+	width: auto;
+	min-height: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+.sb-dash .flatpickr-calendar .flatpickr-current-month .numInputWrapper { width: 6.5ch; }
+.sb-dash .flatpickr-calendar .flatpickr-current-month input.cur-year { width: 100%; padding: 0.4rem 0.5rem; }
+.sb-dash .flatpickr-calendar .flatpickr-time input { width: 100%; }
+.sb-dash .flatpickr-calendar input:focus { box-shadow: none; border: 0; }
+/* Calendar header: month dropdown and year on one row (Metronic uses a 65px year box) */
+.sb-dash .flatpickr-calendar .flatpickr-current-month {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	left: 12.5%;
+	width: 75%;
+	padding: 0;
+}
+.sb-dash .flatpickr-calendar .flatpickr-current-month .flatpickr-monthDropdown-months { margin-right: 0.15rem; padding: 0.35rem 0.4rem; width: auto; }
+.sb-dash .flatpickr-calendar .flatpickr-current-month .numInputWrapper { width: 65px; flex: none; }
+.sb-dash .flatpickr-calendar .flatpickr-current-month input.cur-year { padding: 0.35rem 0.4rem; text-align: left; }
+.sb-dash .flatpickr-calendar .flatpickr-time input::selection { background: var(--d-red-light); color: var(--d-red-dark); }
+
+/* Static calendars live inside a wrapper around the field: keep it full width and drop the calendar just below */
+.sb-dash .flatpickr-wrapper { display: block; width: 100%; position: relative; }
+.sb-dash .flatpickr-calendar.static { position: absolute; top: calc(100% + 4px); left: 0; margin: 0; }
+.sb-dash .flatpickr-calendar.static.open { z-index: 40; }
+
+
+/* ── Journey list (table) and legs ───────────────────────────── */
+.sb-d-jl { position: relative; list-style: none; margin: 0; padding: 0; min-width: 14rem; }
+.sb-d-jl::before { content: ""; position: absolute; left: 8px; top: 12px; bottom: 12px; border-left: 2px dotted var(--d-red); }
+.sb-d-jl__row { position: relative; display: flex; align-items: flex-start; gap: 0.55rem; padding: 0.15rem 0; line-height: 1.3; }
+.sb-d-jl__node { position: relative; z-index: 1; display: grid; place-items: center; flex: none; width: 18px; height: 18px; margin-top: 1px; border: 2px solid var(--d-red); border-radius: 50%; background: #fff; font-size: 0.58rem; font-weight: 700; color: var(--d-red); }
+.sb-d-jl__node--a { background: var(--d-red); color: #fff; }
+.sb-d-jl__node--b { border-color: var(--d-ink); border-radius: 4px; background: var(--d-ink); color: #fff; }
+.sb-d-jl__text { min-width: 0; overflow-wrap: anywhere; }
+.sb-d-leg { margin-right: 0.35rem; }
+.sb-d-field .flatpickr-wrapper { width: 9.5rem; }
+.sb-d-pairnote { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; margin-bottom: 1rem; padding: 0.6rem 0.8rem; border-radius: var(--d-radius); background: var(--d-red-light); font-size: 0.9rem; }
+
+/* ── Edit form ───────────────────────────────────────────────── */
+.sb-d-edit .sb-d-field { display: flex; flex-direction: column; align-items: stretch; gap: 0.25rem; flex: 1 1 8rem; min-width: 0; }
+.sb-d-edit .sb-d-field .sb-d-input { width: 100%; }
+.sb-d-edit .sb-d-field .flatpickr-wrapper { width: 100%; }
+.sb-d-edit textarea.sb-d-input { resize: vertical; }
+.sb-d-field__label { font-size: 0.78rem; font-weight: 600; color: var(--d-soft); }
+.sb-d-frow { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.6rem; }
+.sb-d-estop { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
+.sb-d-estop .sb-d-jl__node { margin-top: 0.6rem; }
+.sb-d-estop__in { position: relative; flex: 1; min-width: 0; }
+.sb-d-sug { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 0.25rem; list-style: none; border: 1px solid var(--d-line, #e4e6ef); border-radius: var(--d-radius); background: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
+.sb-d-sug[hidden] { display: none; }
+.sb-d-sug button { display: block; width: 100%; padding: 0.45rem 0.6rem; border: 0; border-radius: 6px; background: none; font: inherit; text-align: left; cursor: pointer; }
+.sb-d-sug button:hover, .sb-d-sug button:focus-visible { outline: none; background: var(--d-red-light); }
+.sb-d-check { display: flex; align-items: center; gap: 0.5rem; margin: 0.75rem 0; font-size: 0.9rem; }
+.sb-d-edit__msg { min-height: 1.2rem; font-size: 0.88rem; }
+.sb-d-edit__msg.is-error { color: var(--d-red-dark); font-weight: 600; }
+.sb-d-actions--sticky { position: sticky; bottom: 0; padding: 0.75rem 0; background: #fff; border-top: 1px solid var(--d-line, #e4e6ef); }
+.sb-d-changes { margin: 0 0 0.5rem; padding-left: 1.1rem; font-size: 0.88rem; }
+
+/* ── History ─────────────────────────────────────────────────── */
+.sb-d-hist { margin: 0; padding: 0; list-style: none; font-size: 0.88rem; }
+.sb-d-hist li { padding: 0.5rem 0; border-bottom: 1px solid var(--d-line, #e4e6ef); }
+.sb-d-hist__meta { font-size: 0.76rem; color: var(--d-soft); }
+.sb-dash .sb-d-filters .sb-d-field .flatpickr-wrapper { display: block; width: 9.5rem; flex: none; }
+.sb-dash .sb-d-filters .sb-d-field .flatpickr-wrapper .sb-d-input { width: 100%; }

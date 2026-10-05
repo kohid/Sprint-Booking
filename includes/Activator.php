@@ -76,12 +76,16 @@ final class Activator {
 			pay_token_hash CHAR(64) NOT NULL DEFAULT '',
 			paid_pence INT(10) UNSIGNED NULL,
 			paid_at DATETIME NULL,
+			leg VARCHAR(8) NOT NULL DEFAULT 'single',
+			paired_reference VARCHAR(24) NOT NULL DEFAULT '',
+			history LONGTEXT NULL,
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY reference (reference),
 			KEY status (status),
 			KEY pickup_at (pickup_at),
-			KEY user_id (user_id)
+			KEY user_id (user_id),
+			KEY paired_reference (paired_reference)
 		) {$charset};"
 		);
 

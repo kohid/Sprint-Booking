@@ -90,5 +90,23 @@ check( 'a short return still pays the minimum fare', Pricing::quote( $cfg, $ten_
 check( 'return distance is ignored when there is no return', Pricing::quote( $cfg, $ten_miles, array_merge( $base, array( 'return_distance_m' => $twenty_miles ) ) )['total_pence'], 2750 );
 check( 'luggage is still charged once with an own-route return', Pricing::quote( $cfg, $ten_miles, array_merge( $own, array( 'luggage' => 3 ) ) )['total_pence'], 2750 + 5300 + 150 );
 
+// Each leg of a return is a booking of its own; the two legs add up to the one total.
+$r = Pricing::quote( $cfg, $ten_miles, array_merge( $base, array( 'is_return' => true, 'luggage' => 3 ) ) );
+check( 'outbound leg carries the luggage fee', $r['outbound_pence'], 2750 + 150 );
+check( 'return leg is the return fare', $r['return_pence'], 2750 );
+check( 'the two legs add up to the total', $r['outbound_pence'] + $r['return_pence'], $r['total_pence'] );
+check( 'return leg lines add up to its fare', array_sum( array_column( $r['return_lines'], 'pence' ) ), $r['return_pence'] );
+$rd = Pricing::quote( $cfg_disc, $ten_miles, array_merge( $base, array( 'is_return' => true ) ) );
+check( 'with a discount the return lines still add up (a negative discount line)', array_sum( array_column( $rd['return_lines'], 'pence' ) ), $rd['return_pence'] );
+check( 'a discount shows as its own line', in_array( 'return_discount', array_column( $rd['return_lines'], 'key' ), true ), true );
+check( 'legs add up with a discount too', $rd['outbound_pence'] + $rd['return_pence'], $rd['total_pence'] );
+$ro = Pricing::quote( $cfg, $ten_miles, $own );
+check( 'legs add up when the return has its own route', $ro['outbound_pence'] + $ro['return_pence'], $ro['total_pence'] );
+check( 'a one-way booking has no return leg', Pricing::quote( $cfg, $ten_miles, $base )['return_pence'], null );
+$leg = Pricing::quote( $cfg_disc, $twenty_miles, array_merge( $base, array( 'leg' => 'return', 'vias' => 1, 'luggage' => 5 ) ) );
+check( 'a stored return leg priced alone: own distance, via fee, discount, no luggage', $leg['total_pence'], (int) round( 5300 * 0.9 ) );
+check( 'its lines add up', array_sum( array_column( $leg['lines'], 'pence' ) ), $leg['total_pence'] );
+check( 'a quote-only service has no legs to price', Pricing::quote( $cfg, $ten_miles, array_merge( $base, array( 'service' => 'wedding', 'is_return' => true ) ) )['total_pence'], null );
+
 echo $failures ? "\n$failures failed\n" : "\nAll passed\n";
 exit( $failures ? 1 : 0 );

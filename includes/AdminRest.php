@@ -51,6 +51,15 @@ final class AdminRest {
 		);
 		register_rest_route(
 			Rest::NS,
+			'/admin/bookings/(?P<id>\d+)/edit',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( self::class, 'edit' ),
+				'permission_callback' => $guard,
+			)
+		);
+		register_rest_route(
+			Rest::NS,
 			'/admin/bookings/(?P<id>\d+)/status',
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
@@ -90,6 +99,7 @@ final class AdminRest {
 				'from'   => (string) $req->get_param( 'from' ),
 				'to'     => (string) $req->get_param( 'to' ),
 				'sort'   => (string) $req->get_param( 'sort' ),
+				'leg'    => (string) $req->get_param( 'leg' ),
 			),
 			$page,
 			$per
@@ -121,15 +131,32 @@ final class AdminRest {
 		if ( ! isset( Bookings::STATUSES[ $status ] ) ) {
 			return new \WP_Error( 'sb_invalid', __( 'Choose a valid status.', 'sprint-booking' ), array( 'status' => 400 ) );
 		}
-		if ( ! Bookings::find( $id ) ) {
+		$before = Bookings::find( $id );
+		if ( ! $before ) {
 			return new \WP_Error( 'sb_not_found', __( 'That booking no longer exists.', 'sprint-booking' ), array( 'status' => 404 ) );
 		}
 		if ( ! Bookings::update_status( $id, $status ) ) {
 			return new \WP_Error( 'sb_db', __( 'Could not save the new status. Try again.', 'sprint-booking' ), array( 'status' => 500 ) );
 		}
 
+		if ( $before['status'] !== $status ) {
+			History::add( $id, wp_get_current_user()->display_name, array( 'Status: ' . ( Bookings::STATUSES[ $before['status'] ] ?? $before['status'] ) . ' → ' . Bookings::STATUSES[ $status ] ) );
+		}
 		do_action( 'sb_booking_status_changed', $id, $status );
 		return self::one_by_id( $id );
+	}
+
+	/** Edit a booking at the customer's request, or preview the new fare (body: preview true). */
+	public static function edit( \WP_REST_Request $req ) {
+		$id  = (int) $req['id'];
+		$in  = (array) $req->get_json_params();
+		$res = Editor::apply( $id, $in, ! empty( $in['preview'] ), wp_get_current_user()->display_name );
+		if ( is_wp_error( $res ) ) {
+			return $res;
+		}
+		$row = Bookings::find( $id );
+		$res['booking'] = $row ? Presenter::row( $row, Settings::get(), wp_timezone(), new \DateTimeImmutable( 'now', wp_timezone() ) ) : null;
+		return rest_ensure_response( $res );
 	}
 
 	private static function one_by_id( int $id ) {

@@ -297,27 +297,47 @@ final class Rest {
 			'created_at'        => gmdate( 'Y-m-d H:i:s' ),
 		);
 
-		$saved = Bookings::insert( $row );
+		// A return is two bookings, each with its own reference, so either can be cancelled or changed alone.
+		list( $out_row, $ret_row ) = BookingSplit::split( $row, $stops, $back, $q );
+
+		$saved = Bookings::insert( $out_row );
 		if ( is_wp_error( $saved ) ) {
 			return $saved;
 		}
-
-		$row['reference'] = $saved['reference'];
-		$row['stops']        = $stops;
-		$row['return_stops'] = $back;
+		$out_row['reference'] = $saved['reference'];
+		$out_row['stops']     = $stops;
+		unset( $out_row['return_stops'] );
+		$ret_saved = null;
+		if ( $ret_row ) {
+			$ret_saved = Bookings::insert( $ret_row );
+			if ( is_wp_error( $ret_saved ) ) {
+				Bookings::delete( (int) $saved['id'] ); // Never leave half a return behind.
+				return $ret_saved;
+			}
+			Bookings::set_pair( (int) $saved['id'], $ret_saved['reference'] );
+			Bookings::set_pair( (int) $ret_saved['id'], $saved['reference'] );
+			$ret_row['reference']        = $ret_saved['reference'];
+			$ret_row['paired_reference'] = $saved['reference'];
+			$ret_row['stops']            = json_decode( (string) $ret_row['stops'], true );
+			$out_row['paired_reference'] = $ret_saved['reference'];
+		}
+		$row = $out_row;
 
 		// Ways to pay online for this booking (none for a quote, or when no gateway is on).
 		$return_to = esc_url_raw( (string) ( $in['return_to'] ?? '' ) );
 		$links     = ( ! $quote && Payments::any_online() ) ? Payments::links( $saved['reference'], $pay_plain, $return_to ) : array();
 		$row['pay_links'] = $links;
-		Mailer::booking_created( $row );
+		Mailer::booking_created( $row, $ret_row );
 
 		return rest_ensure_response(
 			array(
 				'reference'   => $saved['reference'],
+				// Set when there is a return: its own reference, for cancelling or changing the return alone.
+				'return_reference' => $ret_saved ? $ret_saved['reference'] : null,
 				'status'      => $row['status'],
 				'quote_only'  => $quote,
-				'total_pence' => $row['price_pence'],
+				// The whole trip (both journeys).
+				'total_pence' => $quote ? null : (int) $q['total_pence'],
 				'signed_in'   => $user_id > 0 && in_array( $mode, array( 'register', 'login' ), true ),
 				'registered'  => 'register' === $mode,
 				'payment'     => $pay,
@@ -353,7 +373,7 @@ final class Rest {
 	/**
 	 * Route + price for a validated set of stops and options.
 	 */
-	private static function build_quote( array $cfg, array $stops, array $opts, ?array $back = null ): array {
+	public static function build_quote( array $cfg, array $stops, array $opts, ?array $back = null, string $leg = 'single' ): array {
 		$route      = Routing::route( $stops );
 		$back_route = null !== $back ? Routing::route( $back ) : null;
 
@@ -364,6 +384,9 @@ final class Rest {
 			'luggage'   => $opts['luggage'],
 			'is_return' => $opts['is_return'],
 		);
+		if ( 'return' === $leg ) {
+			$price_opts['leg'] = 'return'; // Pricing a stored return booking on its own route.
+		}
 		if ( $back_route ) {
 			$price_opts['return_distance_m'] = $back_route['distance_m'];
 			$price_opts['return_vias']       = count( $back ) - 2;
@@ -398,6 +421,10 @@ final class Rest {
 			'reason'      => $q['reason'],
 			'lines'       => $q['lines'],
 			'total_pence' => $q['total_pence'],
+			// The same total split by journey (a return is stored as two bookings).
+			'outbound_pence' => $q['outbound_pence'] ?? null,
+			'return_pence'   => $q['return_pence'] ?? null,
+			'return_lines'   => $q['return_lines'] ?? null,
 			'vehicles'    => $vehicles,
 		);
 	}
@@ -407,7 +434,7 @@ final class Rest {
 	 *
 	 * @return array|\WP_Error
 	 */
-	private static function read_options( array $cfg, array $in, bool $need_times ) {
+	public static function read_options( array $cfg, array $in, bool $need_times ) {
 		$service = sanitize_key( (string) ( $in['service'] ?? '' ) );
 		if ( ! isset( $cfg['services'][ $service ] ) ) {
 			return self::bad( __( 'Choose a service.', 'sprint-booking' ) );
@@ -537,7 +564,7 @@ final class Rest {
 	/**
 	 * @return array<int,array{label:string,lat:float,lng:float}>|\WP_Error
 	 */
-	private static function read_stops( array $cfg, $raw ) {
+	public static function read_stops( array $cfg, $raw ) {
 		$max = 2 + (int) $cfg['max_vias'];
 		if ( ! is_array( $raw ) || count( $raw ) < 2 || count( $raw ) > $max ) {
 			return self::bad(

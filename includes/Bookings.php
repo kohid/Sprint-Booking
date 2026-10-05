@@ -189,4 +189,41 @@ final class Bookings {
 		$n     = $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET payment_status = 'paid', payment_method = %s, payment_ref = %s, paid_pence = %d, paid_at = %s WHERE id = %d AND payment_status <> 'paid'", $method, $ref, $pence, gmdate( 'Y-m-d H:i:s' ), $id ) ); // phpcs:ignore WordPress.DB
 		return 1 === (int) $n;
 	}
+
+	/** Link the two legs of a return to each other. */
+	public static function set_pair( int $id, string $reference ): bool {
+		global $wpdb;
+		return false !== $wpdb->update( Activator::table(), array( 'paired_reference' => $reference ), array( 'id' => $id ), array( '%s' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
+
+	/** The other leg of a return, or null for a one-way booking. */
+	public static function pair_of( array $b ): ?array {
+		$ref = (string) ( $b['paired_reference'] ?? '' );
+		return '' === $ref ? null : self::find_by_reference( $ref );
+	}
+
+	public static function delete( int $id ): bool {
+		global $wpdb;
+		return false !== $wpdb->delete( Activator::table(), array( 'id' => $id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
+
+	/**
+	 * Update the columns staff may edit. Anything else in $fields is ignored.
+	 *
+	 * @param array<string,mixed> $fields
+	 */
+	public static function update_fields( int $id, array $fields ): bool {
+		global $wpdb;
+		$allowed = array(
+			'pickup_at' => '%s', 'stops' => '%s', 'distance_m' => '%d', 'duration_s' => '%d', 'route_estimated' => '%d', 'price_pence' => '%d', 'price_lines' => '%s',
+			'vehicle' => '%s', 'passengers' => '%d', 'luggage' => '%d', 'carry_on' => '%d',
+			'customer_title' => '%s', 'customer_name' => '%s', 'customer_phone' => '%s', 'customer_email' => '%s', 'flight_no' => '%s', 'company' => '%s', 'notes' => '%s',
+		);
+		$data = array_intersect_key( $fields, $allowed );
+		if ( ! $data ) {
+			return false;
+		}
+		$formats = array_values( array_intersect_key( $allowed, $data ) );
+		return false !== $wpdb->update( Activator::table(), $data, array( 'id' => $id ), $formats, array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
 }

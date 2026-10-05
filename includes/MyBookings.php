@@ -52,7 +52,8 @@ final class MyBookings {
 			$when  = ( new \DateTimeImmutable( $r['pickup_at'], new \DateTimeZone( 'UTC' ) ) )->setTimezone( $tz )->format( 'D j M Y, H:i' );
 
 			echo '<tr>';
-			echo '<td><strong>' . esc_html( $r['reference'] ) . '</strong></td>';
+			$leg_label = 'return' === ( $r['leg'] ?? '' ) ? __( 'Return', 'sprint-booking' ) : ( 'outbound' === ( $r['leg'] ?? '' ) ? __( 'Way out', 'sprint-booking' ) : '' );
+			echo '<td><strong>' . esc_html( $r['reference'] ) . '</strong>' . ( '' !== $leg_label ? '<br><small>' . esc_html( $leg_label ) . '</small>' : '' ) . '</td>';
 			echo '<td>' . esc_html( $when ) . '</td>';
 			echo '<td>' . esc_html( $first ) . ' → ' . esc_html( $last ) . '</td>';
 			echo '<td>' . esc_html( null === $r['price_pence'] ? __( 'To be quoted', 'sprint-booking' ) : Settings::money( (int) $r['price_pence'], $cfg['currency_symbol'] ) ) . '</td>';

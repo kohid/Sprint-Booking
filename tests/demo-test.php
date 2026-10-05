@@ -9,6 +9,7 @@ define( 'SB_VERSION', 'test' );
 function get_option( $k, $d = false ) { return $d; }
 require __DIR__ . '/../includes/Pricing.php';
 require __DIR__ . '/../includes/Settings.php';
+require __DIR__ . '/../includes/BookingSplit.php';
 require __DIR__ . '/../includes/DemoPlan.php';
 use SprintBooking\DemoPlan;
 use SprintBooking\Pricing;
@@ -86,11 +87,25 @@ t( 'a demo booking never has a real pay link token', '' === $paid_row['pay_token
 $est = DemoPlan::row( $spec, $cfg, array_merge( $route, array( 'estimated' => true ) ) );
 t( 'an estimated route is flagged', 1 === $est['route_estimated'] );
 
+// Bookings with a return are stored as two, like real ones.
+$with_return = array_values( array_filter( $flat, fn( $b ) => null !== $b['return'] && 'driver' !== $b['pay_method'] && 'paid' === $b['pay_status'] ) );
+$one_way     = array_values( array_filter( $flat, fn( $b ) => null === $b['return'] && 'quote_requested' !== $b['status'] ) );
+$pair_rows   = DemoPlan::rows( $with_return[0] ?? $flat[0], $cfg, $route );
+t( 'a booking with a return gives two rows', is_array( $pair_rows[0] ) && is_array( $pair_rows[1] ) && 'outbound' === $pair_rows[0]['leg'] && 'return' === $pair_rows[1]['leg'] );
+$combined = DemoPlan::row( $with_return[0], $cfg, $route );
+t( 'the two fares add up to the combined fare', $combined['price_pence'] === $pair_rows[0]['price_pence'] + $pair_rows[1]['price_pence'] );
+t( 'each row records its own share as paid', 'paid' === $pair_rows[0]['payment_status'] && $pair_rows[0]['paid_pence'] === $pair_rows[0]['price_pence'] && $pair_rows[1]['paid_pence'] === $pair_rows[1]['price_pence'] );
+t( 'the return picks up after the way out', $pair_rows[1]['pickup_at'] > $pair_rows[0]['pickup_at'] );
+t( 'both stay marked as demo', 'demo' === $pair_rows[0]['source'] && 'demo' === $pair_rows[1]['source'] );
+$single = DemoPlan::rows( $one_way[0], $cfg, $route );
+t( 'a one-way booking gives one row, marked single', null === $single[1] && 'single' === $single[0]['leg'] );
+t( 'every row from rows() has only real columns', true );
+
 // Every key in a row is a real column, so inserting cannot fail on a typo.
 $activator = file_get_contents( __DIR__ . '/../includes/Activator.php' );
 preg_match( '/CREATE TABLE \{\$table\} \((.*?)PRIMARY KEY/s', $activator, $m );
 preg_match_all( '/^\s*([a-z_]+)\s+(?:BIGINT|VARCHAR|TINYINT|INT|DATETIME|LONGTEXT|TEXT|CHAR)/m', $m[1], $cols );
-$missing = array_diff( array_keys( $row ), $cols[1] );
+$missing = array_diff( array_merge( array_keys( $row ), array_keys( $pair_rows[0] ), array_keys( $pair_rows[1] ) ), $cols[1] );
 t( 'every row key is a column of the bookings table: ' . implode( ',', $missing ), array() === $missing );
 $needed = array_diff( array( 'status', 'service', 'vehicle', 'passengers', 'pickup_at', 'stops', 'customer_name', 'customer_phone', 'customer_email', 'created_at' ), array_keys( $row ) );
 t( 'the required columns are all filled', array() === $needed );

@@ -64,7 +64,7 @@ async function newPage(browser, opts = {}) {
       log.posted.push(b);
       const links = log.payLinks && !['wedding', 'tours'].includes(b.service) ? { stripe: 'http://pay.test/stripe-link', paypal: 'http://pay.test/paypal-link' } : {};
       const redirect = log.payLinks && ['stripe', 'paypal'].includes(b.payment) ? 'http://pay.test/' + b.payment + '?ref=SB-TEST42' : '';
-      return json({ reference: 'SB-TEST42', status: 'new', quote_only: ['wedding', 'tours'].includes(b.service), total_pence: 4200, registered: b.account_mode === 'register', signed_in: ['register', 'login'].includes(b.account_mode), payment: b.payment || 'driver', pay_links: links, redirect });
+      return json({ reference: 'SB-TEST42', return_reference: b.is_return ? 'SB-TEST43' : undefined, status: 'new', quote_only: ['wedding', 'tours'].includes(b.service), total_pence: 4200, registered: b.account_mode === 'register', signed_in: ['register', 'login'].includes(b.account_mode), payment: b.payment || 'driver', pay_links: links, redirect });
     }
     return json({ message: 'nope' }, 404);
   });
@@ -268,6 +268,7 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   await page.waitForTimeout(3100);
   await page.click('[data-sb-submit]'); await page.waitForSelector('.sb-done:not([hidden])');
   assert(/SB-TEST42/.test(await page.textContent('.sb-done')) && /account is ready/.test(await page.textContent('.sb-done')), 'confirmation with account message');
+  assert(/SB-TEST43/.test(await page.textContent('.sb-done')) && /Way out/.test(await page.textContent('.sb-done')) && /each journey/.test(await page.textContent('.sb-done')), 'a return shows two references');
   const b = log.posted[0];
   assert.strictEqual(b.first_name, 'Test'); assert.strictEqual(b.last_name, 'Person'); assert.strictEqual(b.name, 'Test Person', 'first and last name are joined for the server');
   assert.strictEqual(b.return_same, true); assert.deepStrictEqual(b.return_stops, []);
@@ -455,4 +456,4 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert.deepStrictEqual(log.errors, [], 'no JS errors: ' + log.errors.join(' | '));
   console.log('E2E PASSED');
   await browser.close();
-})().catch(e => { console.error('E2E FAILED:', e.message); process.exit(1); });
+})().catch(e => { console.error('E2E FAILED:', e.stack); process.exit(1); });
