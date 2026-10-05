@@ -202,11 +202,15 @@
 		}
 
 		// Journey
-		var stops = el( 'ol', { 'class': 'sb-d-stops' } );
-		r.stops.forEach( function ( s, i ) {
-			var role = i === 0 ? 'a' : ( i === r.stops.length - 1 ? 'b' : 'via' );
-			stops.appendChild( el( 'li', { 'class': 'sb-d-stop sb-d-stop--' + role }, [ el( 'span', { 'class': 'sb-d-stop__node', 'aria-hidden': 'true', text: role === 'a' ? 'A' : ( role === 'b' ? 'B' : String( i ) ) } ), el( 'span', { text: s.label } ) ] ) );
-		} );
+		function stopList( list ) {
+			var ol = el( 'ol', { 'class': 'sb-d-stops' } );
+			list.forEach( function ( s, i ) {
+				var role = i === 0 ? 'a' : ( i === list.length - 1 ? 'b' : 'via' );
+				ol.appendChild( el( 'li', { 'class': 'sb-d-stop sb-d-stop--' + role }, [ el( 'span', { 'class': 'sb-d-stop__node', 'aria-hidden': 'true', text: role === 'a' ? 'A' : ( role === 'b' ? 'B' : String( i ) ) } ), el( 'span', { text: s.label } ) ] ) );
+			} );
+			return ol;
+		}
+		var stops = stopList( r.stops );
 		var facts = el( 'dl', { 'class': 'sb-d-facts' }, [
 			fact( 'Pickup', r.pickup.day + ', ' + r.pickup.time + ( r.pickup.day.match( /^(Today|Tomorrow|Yesterday)$/ ) ? ' (' + r.pickup.date + ')' : '' ) ),
 			r.return ? fact( 'Return pickup', r.return.day + ', ' + r.return.time ) : null,
@@ -219,6 +223,13 @@
 			fact( 'Company', r.company )
 		] );
 		body.appendChild( section( 'Journey', [ stops, facts ] ) );
+
+		// A return on its own route; a return that retraces the way out is shown as "Return pickup" above.
+		if ( r.return && r.return_route ) {
+			body.appendChild( section( 'Return journey', [ stopList( r.return_route.stops ), el( 'dl', { 'class': 'sb-d-facts' }, [ fact( 'Return pickup', r.return.day + ', ' + r.return.time ), fact( 'Distance', r.return_route.distance_mi ? r.return_route.distance_mi + ' miles' : '' ) ] ) ] ) );
+		} else if ( r.return ) {
+			body.appendChild( el( 'p', { 'class': 'sb-d-muted', text: 'The return is the same route in reverse.' } ) );
+		}
 
 		// Fare
 		var fare = [];
@@ -553,10 +564,10 @@
 		var f = app.filters;
 		btn.disabled = true;
 		api( 'admin/bookings?' + qs( { status: f.status, q: f.q, from: f.from, to: f.to, sort: f.sort, page: 1, per_page: 2000, 'export': 1 } ) ).then( function ( res ) {
-			var head = [ 'Reference', 'Status', 'Service', 'Pickup', 'Return', 'From', 'To', 'Via stops', 'Miles', 'Fare', 'Passengers', 'Suitcases', 'Carry-on', 'Customer', 'Phone', 'Email', 'Flight', 'Company', 'Vulnerable', 'Notes', 'Booked' ];
+			var head = [ 'Reference', 'Status', 'Service', 'Pickup', 'Return', 'From', 'To', 'Via stops', 'Miles', 'Return from', 'Return to', 'Fare', 'Passengers', 'Suitcases', 'Carry-on', 'Customer', 'Phone', 'Email', 'Flight', 'Company', 'Vulnerable', 'Notes', 'Booked' ];
 			var lines = [ head.map( csvCell ).join( ',' ) ];
 			res.rows.forEach( function ( r ) {
-				lines.push( [ r.reference, r.status_label, r.service_label + ( r.direction ? ' (' + r.direction + ')' : '' ), r.pickup.iso.replace( 'T', ' ' ), r.return ? r.return.iso.replace( 'T', ' ' ) : '', r.from, r.to, r.vias, r.distance_mi, r.price_text || 'Quote', r.passengers, r.luggage, r.carry_on, customerName( r.customer ), r.customer.phone, r.customer.email, r.flight_no, r.company, r.vulnerable ? r.vulnerable.label : '', r.notes, r.created.iso.replace( 'T', ' ' ) ].map( csvCell ).join( ',' ) );
+				lines.push( [ r.reference, r.status_label, r.service_label + ( r.direction ? ' (' + r.direction + ')' : '' ), r.pickup.iso.replace( 'T', ' ' ), r.return ? r.return.iso.replace( 'T', ' ' ) : '', r.from, r.to, r.vias, r.distance_mi, r.return_route ? r.return_route.from : '', r.return_route ? r.return_route.to : '', r.price_text || 'Quote', r.passengers, r.luggage, r.carry_on, customerName( r.customer ), r.customer.phone, r.customer.email, r.flight_no, r.company, r.vulnerable ? r.vulnerable.label : '', r.notes, r.created.iso.replace( 'T', ' ' ) ].map( csvCell ).join( ',' ) );
 			} );
 			var blob = new Blob( [ '﻿' + lines.join( '\r\n' ) ], { type: 'text/csv;charset=utf-8' } );
 			var a = el( 'a', { href: URL.createObjectURL( blob ), download: 'bookings-' + new Date().toISOString().slice( 0, 10 ) + '.csv' } );

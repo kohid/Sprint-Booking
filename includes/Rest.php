@@ -141,7 +141,12 @@ final class Rest {
 			return $stops;
 		}
 
-		return rest_ensure_response( self::build_quote( $cfg, $stops, $opts ) );
+		$back = self::read_return( $cfg, $in, $opts );
+		if ( is_wp_error( $back ) ) {
+			return $back;
+		}
+
+		return rest_ensure_response( self::build_quote( $cfg, $stops, $opts, $back ) );
 	}
 
 	/**
@@ -161,6 +166,16 @@ final class Rest {
 			return new \WP_Error( 'sb_rejected', __( 'We could not accept this booking. Please call us.', 'sprint-booking' ), array( 'status' => 400 ) );
 		}
 
+		// The form sends first and last name separately; one name is stored.
+		$first = trim( sanitize_text_field( (string) ( $in['first_name'] ?? '' ) ) );
+		$last  = trim( sanitize_text_field( (string) ( $in['last_name'] ?? '' ) ) );
+		if ( '' !== $first || '' !== $last ) {
+			if ( '' === $first || '' === $last ) {
+				return self::bad( __( 'Enter your first name and your last name.', 'sprint-booking' ) );
+			}
+			$in['name'] = $first . ' ' . $last;
+		}
+
 		$opts = self::read_options( $cfg, $in, true );
 		if ( is_wp_error( $opts ) ) {
 			return $opts;
@@ -168,6 +183,10 @@ final class Rest {
 		$stops = self::read_stops( $cfg, $in['stops'] ?? null );
 		if ( is_wp_error( $stops ) ) {
 			return $stops;
+		}
+		$back = self::read_return( $cfg, $in, $opts );
+		if ( is_wp_error( $back ) ) {
+			return $back;
 		}
 
 		// Who is booking: guest, new account, existing customer, or an already signed-in customer.
@@ -222,7 +241,7 @@ final class Rest {
 		}
 
 		// Price first: if anything above or here fails, no account has been created yet.
-		$q     = self::build_quote( $cfg, $stops, $opts );
+		$q     = self::build_quote( $cfg, $stops, $opts, $back );
 		$quote = $q['quote_only'];
 
 		if ( 'register' === $mode ) {
@@ -250,6 +269,8 @@ final class Rest {
 			'pickup_at'         => $opts['pickup_utc'],
 			'return_at'         => $opts['return_utc'],
 			'stops'             => wp_json_encode( $stops ),
+			'return_stops'      => null === $back ? null : wp_json_encode( $back ),
+			'return_distance_m' => null === $back ? null : (int) $q['return_distance_m'],
 			'distance_m'        => $q['distance_m'],
 			'duration_s'        => $q['duration_s'],
 			'route_estimated'   => $q['estimated'] ? 1 : 0,
@@ -273,7 +294,8 @@ final class Rest {
 		}
 
 		$row['reference'] = $saved['reference'];
-		$row['stops']     = $stops;
+		$row['stops']        = $stops;
+		$row['return_stops'] = $back;
 		Mailer::booking_created( $row );
 
 		return rest_ensure_response(
@@ -293,8 +315,9 @@ final class Rest {
 	/**
 	 * Route + price for a validated set of stops and options.
 	 */
-	private static function build_quote( array $cfg, array $stops, array $opts ): array {
-		$route = Routing::route( $stops );
+	private static function build_quote( array $cfg, array $stops, array $opts, ?array $back = null ): array {
+		$route      = Routing::route( $stops );
+		$back_route = null !== $back ? Routing::route( $back ) : null;
 
 		$price_opts = array(
 			'service'   => $opts['service'],
@@ -303,8 +326,12 @@ final class Rest {
 			'luggage'   => $opts['luggage'],
 			'is_return' => $opts['is_return'],
 		);
+		if ( $back_route ) {
+			$price_opts['return_distance_m'] = $back_route['distance_m'];
+			$price_opts['return_vias']       = count( $back ) - 2;
+		}
 
-		$too_far = $route['distance_m'] > self::MAX_AUTO_DISTANCE_M;
+		$too_far = $route['distance_m'] > self::MAX_AUTO_DISTANCE_M || ( $back_route && $back_route['distance_m'] > self::MAX_AUTO_DISTANCE_M );
 		$q       = $too_far
 			? array(
 				'quote_only'  => true,
@@ -323,7 +350,12 @@ final class Rest {
 			'duration_s'  => $route['duration_s'],
 			'legs'        => $route['legs'],
 			'geometry'    => $route['geometry'],
-			'estimated'   => $route['estimated'],
+			'estimated'   => $route['estimated'] || ( $back_route && $back_route['estimated'] ),
+			// Only when the return takes its own route; null means "the same route, reversed".
+			'return_distance_m' => $back_route ? $back_route['distance_m'] : null,
+			'return_duration_s' => $back_route ? $back_route['duration_s'] : null,
+			'return_legs'       => $back_route ? $back_route['legs'] : null,
+			'return_geometry'   => $back_route ? $back_route['geometry'] : null,
 			'quote_only'  => $q['quote_only'],
 			'reason'      => $q['reason'],
 			'lines'       => $q['lines'],
@@ -441,6 +473,27 @@ final class Rest {
 			}
 		}
 		return $opts;
+	}
+
+	/**
+	 * The return route, when the return does not simply retrace the way out.
+	 *
+	 * @return array<int,array{label:string,lat:float,lng:float}>|null|\WP_Error null: no return, or the same route reversed.
+	 */
+	private static function read_return( array $cfg, array $in, array $opts ) {
+		if ( empty( $opts['is_return'] ) ) {
+			return null;
+		}
+		// Anything but an explicit "false" keeps the old behaviour: the same route, reversed.
+		$same = ! array_key_exists( 'return_same', $in ) || filter_var( $in['return_same'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE ) !== false;
+		if ( $same ) {
+			return null;
+		}
+		$back = self::read_stops( $cfg, $in['return_stops'] ?? null );
+		if ( is_wp_error( $back ) ) {
+			return self::bad( __( 'Add the return pickup and drop-off, each chosen from the suggestions, or tick "same route in reverse".', 'sprint-booking' ) );
+		}
+		return $back;
 	}
 
 	/**

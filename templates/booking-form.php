@@ -54,26 +54,42 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 				</div>
 			</div>
 
-			<!-- Pickup, via stops, the Add via stop button, then drop-off: built by JS. -->
-			<ol class="sb-route" data-sb-stops></ol>
-
-			<div class="sb-grid">
-				<div class="sb-field">
-					<label for="<?php echo esc_attr( $uid ); ?>-pickup-date"><?php esc_html_e( 'Pickup date', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-pickup-date" name="pickup_date" class="sb-date" placeholder="<?php esc_attr_e( 'Select a date', 'sprint-booking' ); ?>" required readonly>
-				</div>
-				<div class="sb-field">
-					<label for="<?php echo esc_attr( $uid ); ?>-pickup-time"><?php esc_html_e( 'Pickup time', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-pickup-time" name="pickup_time" class="sb-time" placeholder="<?php esc_attr_e( 'Select a time', 'sprint-booking' ); ?>" required readonly>
-				</div>
-			</div>
-
 			<label class="sb-check sb-check--block">
 				<input type="checkbox" name="is_return" value="1" data-sb-return>
 				<span><?php esc_html_e( 'I also need a return journey', 'sprint-booking' ); ?></span>
 			</label>
 
-			<div class="sb-return" data-sb-return-field hidden>
+			<!-- With a return, the route is split into two tabs: the way out and the way back. -->
+			<div class="sb-tabs" role="tablist" aria-label="<?php esc_attr_e( 'Journey', 'sprint-booking' ); ?>" data-sb-tabs hidden>
+				<button type="button" role="tab" class="sb-tab" id="<?php echo esc_attr( $uid ); ?>-tab-out" aria-controls="<?php echo esc_attr( $uid ); ?>-leg-out" aria-selected="true" data-sb-tab="out"><?php esc_html_e( 'Journey', 'sprint-booking' ); ?></button>
+				<button type="button" role="tab" class="sb-tab" id="<?php echo esc_attr( $uid ); ?>-tab-ret" aria-controls="<?php echo esc_attr( $uid ); ?>-leg-ret" aria-selected="false" tabindex="-1" data-sb-tab="ret"><?php esc_html_e( 'Return journey', 'sprint-booking' ); ?></button>
+			</div>
+
+			<div class="sb-leg" role="tabpanel" id="<?php echo esc_attr( $uid ); ?>-leg-out" aria-labelledby="<?php echo esc_attr( $uid ); ?>-tab-out" data-sb-tabpanel="out">
+				<!-- Pickup, via stops, the Add via stop button, then drop-off: built by JS. -->
+				<ol class="sb-route" data-sb-stops></ol>
+
+				<div class="sb-grid">
+					<div class="sb-field">
+						<label for="<?php echo esc_attr( $uid ); ?>-pickup-date"><?php esc_html_e( 'Pickup date', 'sprint-booking' ); ?></label>
+						<input type="text" id="<?php echo esc_attr( $uid ); ?>-pickup-date" name="pickup_date" class="sb-date" placeholder="<?php esc_attr_e( 'Select a date', 'sprint-booking' ); ?>" required readonly>
+					</div>
+					<div class="sb-field">
+						<label for="<?php echo esc_attr( $uid ); ?>-pickup-time"><?php esc_html_e( 'Pickup time', 'sprint-booking' ); ?></label>
+						<input type="text" id="<?php echo esc_attr( $uid ); ?>-pickup-time" name="pickup_time" class="sb-time" placeholder="<?php esc_attr_e( 'Select a time', 'sprint-booking' ); ?>" required readonly>
+					</div>
+				</div>
+			</div>
+
+			<div class="sb-leg" role="tabpanel" id="<?php echo esc_attr( $uid ); ?>-leg-ret" aria-labelledby="<?php echo esc_attr( $uid ); ?>-tab-ret" data-sb-tabpanel="ret" hidden>
+				<label class="sb-check sb-check--block">
+					<input type="checkbox" name="return_same" value="1" checked data-sb-return-same>
+					<span><?php esc_html_e( 'The return follows the same route in reverse, with the same via stops.', 'sprint-booking' ); ?></span>
+				</label>
+
+				<!-- Mirrors the way out while the box above is ticked; empty and editable when it is not. -->
+				<ol class="sb-route" data-sb-stops-ret></ol>
+
 				<div class="sb-grid">
 					<div class="sb-field">
 						<label for="<?php echo esc_attr( $uid ); ?>-return-date"><?php esc_html_e( 'Return pickup date', 'sprint-booking' ); ?></label>
@@ -84,7 +100,6 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 						<input type="text" id="<?php echo esc_attr( $uid ); ?>-return-time" name="return_time" class="sb-time" placeholder="<?php esc_attr_e( 'Select a time', 'sprint-booking' ); ?>" readonly>
 					</div>
 				</div>
-				<p class="sb-hint"><?php esc_html_e( 'The return follows the same route in reverse, with the same via stops.', 'sprint-booking' ); ?></p>
 			</div>
 
 			<div class="sb-vulnerable">
@@ -193,8 +208,12 @@ $signed_in = is_user_logged_in() ? wp_get_current_user() : null;
 					</select>
 				</div>
 				<div class="sb-field" data-sb-details>
-					<label for="<?php echo esc_attr( $uid ); ?>-name"><?php esc_html_e( 'Full name', 'sprint-booking' ); ?></label>
-					<input type="text" id="<?php echo esc_attr( $uid ); ?>-name" name="name" maxlength="100" autocomplete="name">
+					<label for="<?php echo esc_attr( $uid ); ?>-first"><?php esc_html_e( 'First name', 'sprint-booking' ); ?></label>
+					<input type="text" id="<?php echo esc_attr( $uid ); ?>-first" name="first_name" maxlength="50" autocomplete="given-name">
+				</div>
+				<div class="sb-field" data-sb-details>
+					<label for="<?php echo esc_attr( $uid ); ?>-last"><?php esc_html_e( 'Last name', 'sprint-booking' ); ?></label>
+					<input type="text" id="<?php echo esc_attr( $uid ); ?>-last" name="last_name" maxlength="50" autocomplete="family-name">
 				</div>
 			</div>
 			<div class="sb-grid">

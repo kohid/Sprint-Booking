@@ -129,6 +129,13 @@ t( 'no return and no vulnerable flag give null', null === $bare['return'] && nul
 t( 'a far date shows the weekday and date', 'Fri 25 Dec' === $bare['pickup']['day'] );
 t( 'winter times are not shifted', '09:00' === $bare['pickup']['time'] );
 
+// ── A return on its own route ──
+$own = Presenter::row( array( 'id' => 2, 'status' => 'new', 'stops' => json_encode( array( array( 'label' => 'A', 'lat' => 57.4, 'lng' => -4.2 ), array( 'label' => 'B', 'lat' => 57.5, 'lng' => -4.1 ) ) ), 'return_stops' => json_encode( array( array( 'label' => 'C', 'lat' => 57.6, 'lng' => -3.9 ), array( 'label' => 'D', 'lat' => 57.7, 'lng' => -3.8 ), array( 'label' => 'E', 'lat' => 57.5, 'lng' => -4.0 ) ) ), 'return_distance_m' => 16093, 'pickup_at' => '2026-12-25 09:00:00', 'return_at' => '2026-12-25 15:00:00', 'price_pence' => 5000 ), $cfg, $tz, $now );
+t( 'own-route return is presented with its stops', is_array( $own['return_route'] ) && 3 === count( $own['return_route']['stops'] ) && 'C' === $own['return_route']['from'] && 'E' === $own['return_route']['to'] && 1 === $own['return_route']['vias'] );
+t( 'own-route return distance is in miles', 10.0 === $own['return_route']['distance_mi'] );
+t( 'a return on the same route has no return_route', null === $bare['return_route'] );
+t( 'broken return stops are ignored', null === Presenter::row( array( 'id' => 3, 'status' => 'new', 'stops' => '[]', 'return_stops' => 'nope', 'pickup_at' => '2026-12-25 09:00:00' ), $cfg, $tz, $now )['return_route'] );
+
 // ── Finding the page that holds each dashboard view (plain content and Elementor JSON) ──
 use SprintBooking\Dashboard;
 t( 'bare shortcode means overview', 'overview' === Dashboard::view_in( 'Hi [sprint_dashboard] there' ) );

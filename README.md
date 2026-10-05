@@ -49,6 +49,13 @@ Not built yet: the AI conversation itself (that lives in ElevenLabs), a customer
 
 The dashboard shortcodes show a sign-in form to visitors and a "No access" notice to signed-in users whose role is not ticked; the data itself is only served to staff by the REST API.
 
+## The booking form
+
+- **Return journey:** tick "I also need a return journey" and the route splits into two tabs, Journey and Return journey. On the return tab, "The return follows the same route in reverse, with the same via stops" is ticked by default and fills the return route from the way out (read-only, updating as the way out changes). Untick it and the return route is empty: the customer enters their own pickup, via stops and drop-off, and the fare is worked out from that route's own distance.
+- **Name:** first name and last name are separate fields (stored together as one name).
+- **Map:** zooms with the mouse wheel, so the page does not scroll while the pointer is over the map.
+- **Width:** `.sb-app` fills whatever column it is put in, so an Elementor section or container set to Full Width or Boxed decides the width.
+
 ## How the price is worked out
 
 Distance is measured automatically from pickup through every via stop to drop-off. The tariff

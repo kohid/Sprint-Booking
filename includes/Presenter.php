@@ -55,6 +55,7 @@ final class Presenter {
 				),
 				$stops
 			),
+			'return_route' => self::return_route( $r ),
 			'from'         => $first,
 			'to'           => $last,
 			'vias'         => max( 0, count( $stops ) - 2 ),
@@ -107,6 +108,25 @@ final class Presenter {
 			'day'  => $day,
 			'date' => $d->format( 'D j M Y' ),
 			'time' => $d->format( 'H:i' ),
+		);
+	}
+
+	/** The return journey's own route, or null when the return retraces the way out. */
+	private static function return_route( array $r ): ?array {
+		$raw = json_decode( (string) ( $r['return_stops'] ?? '' ), true );
+		if ( ! is_array( $raw ) || count( $raw ) < 2 ) {
+			return null;
+		}
+		$stops = array_map(
+			static fn( $s ) => array( 'label' => (string) ( $s['label'] ?? '' ), 'lat' => (float) ( $s['lat'] ?? 0 ), 'lng' => (float) ( $s['lng'] ?? 0 ) ),
+			$raw
+		);
+		return array(
+			'stops'       => $stops,
+			'from'        => $stops[0]['label'],
+			'to'          => $stops[ count( $stops ) - 1 ]['label'],
+			'vias'        => count( $stops ) - 2,
+			'distance_mi' => round( (int) ( $r['return_distance_m'] ?? 0 ) / Pricing::METRES_PER_MILE, 1 ),
 		);
 	}
 }

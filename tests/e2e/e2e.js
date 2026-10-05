@@ -23,10 +23,10 @@ const VEH = { saloon: [1, 4, 2], estate: [1.1, 4, 3], mpv: [1.35, 6, 4], minibus
 async function newPage(browser, opts = {}) {
   const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 }, deviceScaleFactor: opts.dpr || 1 });
   const page = await ctx.newPage();
-  const log = { errors: [], posted: [], geocodeCalls: [], headers: [], bookingError: null };
+  const log = { tiles: [], quotes: [], errors: [], posted: [], geocodeCalls: [], headers: [], bookingError: null };
   page.on('pageerror', e => log.errors.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !/tiles\.test|ERR_/.test(m.text())) log.errors.push('console: ' + m.text()); });
-  await page.route('http://tiles.test/**', r => r.abort());
+  await page.route('http://tiles.test/**', r => { log.tiles.push(r.request().url()); r.abort(); });
   await page.route('**/wp-json/sprint-booking/v1/**', async route => {
     const req = route.request(); const url = new URL(req.url()); const ep = url.pathname.split('/').pop();
     const json = (b, s = 200) => route.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(b) });
@@ -41,18 +41,22 @@ async function newPage(browser, opts = {}) {
       return json({ min_pickup: `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`, lead_minutes: 60 });
     }
     const b = req.postDataJSON();
-    if (ep === 'quote') {
+    if (ep === 'quote') { log.quotes.push(b);
       let legs = [], g = [];
       for (let i = 0; i < b.stops.length - 1; i++) legs.push(Math.round(hav(b.stops[i], b.stops[i + 1]) * 1.3));
       b.stops.forEach(s => g.push([s.lng, s.lat]));
       const dist = legs.reduce((a, c) => a + c, 0), vias = b.stops.length - 2;
       const quoteOnly = ['wedding', 'tours'].includes(b.service);
-      const price = (veh) => { const [m] = VEH[veh]; const sub = 350 + Math.round(dist / MI * 240); const f = Math.round(sub * m); const j = Math.max(f, 600) + vias * 150; return j + (b.is_return ? j : 0) + Math.max(0, b.luggage - 2) * 150; };
+      const back = b.is_return && b.return_same === false && Array.isArray(b.return_stops) && b.return_stops.length > 1 ? b.return_stops : null;
+      let rlegs = [], rg = []; if (back) { for (let i = 0; i < back.length - 1; i++) rlegs.push(Math.round(hav(back[i], back[i + 1]) * 1.3)); back.forEach(s => rg.push([s.lng, s.lat])); }
+      const rdist = rlegs.reduce((a, c) => a + c, 0), rvias = back ? back.length - 2 : 0;
+      const jf = (veh, d, v) => { const [m] = VEH[veh]; const sub = 350 + Math.round(d / MI * 240); const f = Math.round(sub * m); return Math.max(f, 600) + v * 150; };
+      const price = (veh) => { const j = jf(veh, dist, vias); return j + (b.is_return ? (back ? jf(veh, rdist, rvias) : j) : 0) + Math.max(0, b.luggage - 2) * 150; };
       const vk = b.service === 'minibus' ? ['minibus8', 'minibus16'] : Object.keys(VEH);
       const vehicles = {}; if (!quoteOnly) vk.forEach(k => vehicles[k] = price(k));
       const veh = b.vehicle || vk[0];
       const lines = quoteOnly ? [] : [{ key: 'base', pence: 350 }, { key: 'distance', pence: Math.round(dist / MI * 240) }, ...(vias ? [{ key: 'vias', pence: vias * 150 }] : []), ...(b.luggage > 2 ? [{ key: 'luggage', pence: (b.luggage - 2) * 150 }] : []), ...(b.is_return ? [{ key: 'return', pence: 0 }] : [])];
-      return json({ distance_m: dist, duration_s: Math.round(dist / 11), legs, geometry: g, estimated: false, quote_only: quoteOnly, reason: quoteOnly ? 'service' : null, lines, total_pence: quoteOnly ? null : price(veh), vehicles });
+      return json({ distance_m: dist, duration_s: Math.round(dist / 11), legs, geometry: g, estimated: false, return_distance_m: back ? rdist : null, return_duration_s: back ? Math.round(rdist / 11) : null, return_legs: back ? rlegs : null, return_geometry: back ? rg : null, quote_only: quoteOnly, reason: quoteOnly ? 'service' : null, lines, total_pence: quoteOnly ? null : price(veh), vehicles });
     }
     if (ep === 'bookings' && log.bookingError) { const err = log.bookingError; log.bookingError = null; log.posted.push(b); return json(err, 400); }
     if (ep === 'bookings') { log.posted.push(b); return json({ reference: 'SB-TEST42', status: 'new', quote_only: ['wedding', 'tours'].includes(b.service), total_pence: 4200, registered: b.account_mode === 'register', signed_in: ['register', 'login'].includes(b.account_mode) }); }
@@ -81,7 +85,7 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   assert.strictEqual(await page.locator('select[name=service] option').count(), 6, 'six services in a select');
   assert.strictEqual(await page.locator('.sb-chip, .sb-find').count(), 0, 'no service chips or Find buttons');
   const y = async sel => (await page.locator(sel).first().boundingBox()).y;
-  const [yp, ya, yd] = [await y('.sb-stop--pickup'), await y('.sb-addrow'), await y('.sb-stop--dropoff')];
+  const [yp, ya, yd] = [await y('[data-sb-stops] .sb-stop--pickup'), await y('[data-sb-stops] .sb-addrow'), await y('[data-sb-stops] .sb-stop--dropoff')];
   assert(yp < ya && ya < yd, `Add via stop is between pickup (${yp}) and drop-off (${yd}): ${ya}`);
   assert(await page.locator('[data-sb-only=airport]').first().isVisible(), 'airport transfer direction select shown for Airport Transfer');
   assert.strictEqual(log.geocodeCalls.length, 0, 'no address lookups on page load');
@@ -89,35 +93,35 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
 
   // ── Suggestions while typing ──
   assert.strictEqual(await page.inputValue('[name=airport_direction]'), '', 'departure/arrival must be chosen');
-  await page.fill('.sb-stop--dropoff input', 'in'); await page.waitForTimeout(500);
+  await page.fill('[data-sb-stops] .sb-stop--dropoff input', 'in'); await page.waitForTimeout(500);
   assert.strictEqual(log.geocodeCalls.length, 0, 'nothing is searched under 3 characters');
   await page.selectOption('[name=airport_direction]', 'arrival'); // fills the pickup with the airport
-  await page.waitForSelector('.sb-stop--pickup.is-resolved');
-  assert(/Inverness Airport/.test(await page.inputValue('.sb-stop--pickup input')), 'Arrival puts the airport in the pickup');
-  await suggest(page, '.sb-stop--dropoff', 'castle', 2);
-  assert.strictEqual(await page.getAttribute('.sb-stop--dropoff input', 'aria-expanded'), 'true', 'combobox expanded');
+  await page.waitForSelector('[data-sb-stops] .sb-stop--pickup.is-resolved');
+  assert(/Inverness Airport/.test(await page.inputValue('[data-sb-stops] .sb-stop--pickup input')), 'Arrival puts the airport in the pickup');
+  await suggest(page, '[data-sb-stops] .sb-stop--dropoff', 'castle', 2);
+  assert.strictEqual(await page.getAttribute('[data-sb-stops] .sb-stop--dropoff input', 'aria-expanded'), 'true', 'combobox expanded');
   await page.keyboard.press('Escape');
-  assert.strictEqual(await page.locator('.sb-stop--dropoff .sb-results').isHidden(), true, 'Escape closes suggestions');
+  assert.strictEqual(await page.locator('[data-sb-stops] .sb-stop--dropoff .sb-results').isHidden(), true, 'Escape closes suggestions');
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
-  const activeId = await page.getAttribute('.sb-stop--dropoff input', 'aria-activedescendant');
+  const activeId = await page.getAttribute('[data-sb-stops] .sb-stop--dropoff input', 'aria-activedescendant');
   assert(/Castle B/.test(await page.textContent('#' + activeId)), 'arrow keys move through suggestions');
   await page.keyboard.press('ArrowUp'); await page.keyboard.press('Enter');
-  await page.waitForSelector('.sb-stop--dropoff.is-resolved');
-  assert(/Castle A/.test(await page.inputValue('.sb-stop--dropoff input')), 'Enter picks the highlighted suggestion');
+  await page.waitForSelector('[data-sb-stops] .sb-stop--dropoff.is-resolved');
+  assert(/Castle A/.test(await page.inputValue('[data-sb-stops] .sb-stop--dropoff input')), 'Enter picks the highlighted suggestion');
 
   // Typing quickly only searches for the final text.
   const before = log.geocodeCalls.length;
-  await page.click('.sb-add-via'); await page.waitForSelector('.sb-stop--via');
-  await page.locator('.sb-stop--via input').pressSequentially('nairn', { delay: 40 });
-  await page.waitForSelector('.sb-stop--via .sb-results li');
+  await page.click('[data-sb-stops] .sb-add-via'); await page.waitForSelector('[data-sb-stops] .sb-stop--via');
+  await page.locator('[data-sb-stops] .sb-stop--via input').pressSequentially('nairn', { delay: 40 });
+  await page.waitForSelector('[data-sb-stops] .sb-stop--via .sb-results li');
   assert.strictEqual(log.geocodeCalls.length, before + 1, 'debounced to one lookup: ' + log.geocodeCalls.slice(before));
-  await pickFirst(page, '.sb-stop--via');
-  await page.click('.sb-add-via'); await page.waitForSelector('.sb-stop--via >> nth=1');
-  await suggest(page, '.sb-stop--via >> nth=1', 'culloden'); await pickFirst(page, '.sb-stop--via >> nth=1');
-  const yv = await y('.sb-stop--via >> nth=1'), ya2 = await y('.sb-addrow'), yd2 = await y('.sb-stop--dropoff');
+  await pickFirst(page, '[data-sb-stops] .sb-stop--via');
+  await page.click('[data-sb-stops] .sb-add-via'); await page.waitForSelector('[data-sb-stops] .sb-stop--via >> nth=1');
+  await suggest(page, '[data-sb-stops] .sb-stop--via >> nth=1', 'culloden'); await pickFirst(page, '[data-sb-stops] .sb-stop--via >> nth=1');
+  const yv = await y('[data-sb-stops] .sb-stop--via >> nth=1'), ya2 = await y('[data-sb-stops] .sb-addrow'), yd2 = await y('[data-sb-stops] .sb-stop--dropoff');
   assert(yv < ya2 && ya2 < yd2, 'Add via stop stays just above drop-off after adding vias');
   await page.waitForSelector('.sb-total');
-  const legs = await page.locator('.sb-legrow').allTextContents();
+  const legs = await page.locator('[data-sb-stops] .sb-legrow').allTextContents();
   assert.strictEqual(legs.length, 3); assert(legs.every(t => /miles/.test(t)), 'leg distances: ' + legs);
   const total1 = await page.textContent('.sb-total'); assert(/^£\d+\.\d\d$/.test(total1), 'fare shown: ' + total1);
   await page.screenshot({ path: OUT + '/02-step1.png', fullPage: true });
@@ -145,6 +149,65 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   const n = s => parseFloat(s.replace('£', ''));
   const totalRet = await page.textContent('.sb-total'); assert(Math.abs(n(totalRet) - 2 * n(total1)) < 0.011, `return ≈ double: ${total1} -> ${totalRet}`);
   await setDate(page, 'return_date', pickedDate); await page.evaluate(() => document.querySelector('[name=return_time]')._flatpickr.setDate('23:55', true));
+
+  // ── Return journey tab: same route in reverse, or its own route ──
+  assert(await page.locator('[data-sb-tabs]').isVisible(), 'tabs appear once a return is wanted');
+  assert.deepStrictEqual(await page.locator('[data-sb-tab]').allTextContents(), ['Journey', 'Return journey'], 'tab names');
+  assert.strictEqual(await page.getAttribute('[data-sb-tab=out]', 'aria-selected'), 'true');
+  await page.click('[data-sb-tab=ret]');
+  assert(await page.locator('[data-sb-tabpanel=ret]').isVisible() && await page.locator('[data-sb-tabpanel=out]').isHidden(), 'the return tab replaces the outbound panel');
+  assert(await page.isChecked('[data-sb-return-same]'), 'same route in reverse is ticked by default');
+  assert(/same route in reverse, with the same via stops/.test(await page.textContent('[data-sb-tabpanel=ret] .sb-check')), 'checkbox wording');
+  const outVals = await page.locator('[data-sb-stops] .sb-search input').evaluateAll(n => n.map(i => i.value));
+  const retVals = await page.locator('[data-sb-stops-ret] .sb-search input').evaluateAll(n => n.map(i => i.value));
+  assert.deepStrictEqual(retVals, outVals.slice().reverse(), 'the return fills the way out, reversed, via stops included');
+  assert(await page.locator('[data-sb-stops-ret] .sb-search input').evaluateAll(n => n.every(i => i.readOnly)), 'mirrored stops are read-only');
+  assert.strictEqual(await page.locator('[data-sb-stops-ret] .sb-add-via').count(), 0, 'no add-via while mirrored');
+  assert.strictEqual(await page.locator('[data-sb-stops-ret] .sb-legrow').count(), outVals.length - 1);
+  const legsRet = await page.locator('[data-sb-stops-ret] .sb-legrow').allTextContents();
+  assert(legsRet.every(t => /miles/.test(t)), 'return leg distances shown: ' + legsRet);
+  assert.strictEqual(log.quotes.at(-1).return_same, true); assert.deepStrictEqual(log.quotes.at(-1).return_stops, []);
+
+  // Unticked: the return starts empty and takes its own route.
+  await page.uncheck('[data-sb-return-same]');
+  assert.deepStrictEqual(await page.locator('[data-sb-stops-ret] .sb-search input').evaluateAll(n => n.map(i => i.value)), ['', ''], 'unticked means an empty return route');
+  assert(await page.locator('[data-sb-stops-ret] .sb-search input').evaluateAll(n => n.every(i => !i.readOnly)), 'and it can be edited');
+  assert.strictEqual(await page.locator('[data-sb-stops-ret] .sb-add-via').count(), 1, 'return via stops can be added');
+  assert(/Return pickup/.test(await page.textContent('[data-sb-stops-ret] .sb-stop--pickup label')) && /Return drop-off/.test(await page.textContent('[data-sb-stops-ret] .sb-stop--dropoff label')), 'return stops are labelled');
+  await suggest(page, '[data-sb-stops-ret] .sb-stop--pickup', 'nairn'); await pickFirst(page, '[data-sb-stops-ret] .sb-stop--pickup');
+  await suggest(page, '[data-sb-stops-ret] .sb-stop--dropoff', 'aberdeen'); await pickFirst(page, '[data-sb-stops-ret] .sb-stop--dropoff');
+  await page.waitForFunction(() => /return \d/.test(document.querySelector('.sb-trip') ? document.querySelector('.sb-trip').textContent : ''));
+  const q2 = log.quotes.at(-1); assert.strictEqual(q2.return_same, false); assert.strictEqual(q2.return_stops.length, 2, 'own return route is sent');
+  assert(/Way out [\d.]+ miles · return [\d.]+ miles/.test(await page.textContent('.sb-trip')), 'summary shows both distances: ' + await page.textContent('.sb-trip'));
+  await page.screenshot({ path: OUT + '/03b-return-tab.png', fullPage: true });
+
+  // An own route that is not filled in cannot be booked.
+  await page.click('[data-sb-tab=ret] >> nth=0');
+  await page.fill('[data-sb-stops-ret] .sb-stop--dropoff input', 'xx');
+  await page.click('[data-sb-next]');
+  assert(/Return drop-off: pick an address/.test(await page.textContent('[data-sb-errors]')), 'unfinished return route is reported');
+  await suggest(page, '[data-sb-stops-ret] .sb-stop--dropoff', 'aberdeen'); await pickFirst(page, '[data-sb-stops-ret] .sb-stop--dropoff');
+
+  // Ticking again mirrors the way out once more.
+  await page.check('[data-sb-return-same]');
+  assert.deepStrictEqual(await page.locator('[data-sb-stops-ret] .sb-search input').evaluateAll(n => n.map(i => i.value)), outVals.slice().reverse(), 'ticking again mirrors again');
+  await page.click('[data-sb-tab=out]');
+  assert(await page.locator('[data-sb-tabpanel=out]').isVisible(), 'back on the journey tab');
+  await page.waitForFunction(t => ((document.querySelector('.sb-total') || {}).textContent === t), totalRet);
+
+  // ── The map zooms with the mouse wheel ──
+  const zOf = u => +(/\/(\d+)\/\d+\/\d+\.png/.exec(u) || [])[1];
+  await page.waitForTimeout(600); const seenTiles = log.tiles.length; const zNow = zOf(log.tiles[seenTiles - 1] || '');
+  await page.locator('[data-sb-map]').scrollIntoViewIfNeeded();
+  const mb = await page.locator('[data-sb-map]').boundingBox();
+  await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2);
+  await page.mouse.wheel(0, -600); await page.waitForTimeout(1200);
+  const fresh = log.tiles.slice(seenTiles).map(zOf).filter(Number.isFinite);
+  assert(fresh.length && Math.max(...fresh) > zNow, `scrolling over the map zooms in (tile zoom ${zNow} -> ${Math.max(...fresh)})`);
+
+  // ── The form fills the column it is placed in ──
+  const widths = await page.evaluate(() => { const a = document.querySelector('.sb-app'); return [a.getBoundingClientRect().width, a.parentElement.clientWidth - parseFloat(getComputedStyle(a.parentElement).paddingLeft) - parseFloat(getComputedStyle(a.parentElement).paddingRight)]; });
+  assert(Math.abs(widths[0] - widths[1]) <= 1, 'the form is as wide as its container: ' + widths);
 
   // ── Vulnerable solo traveller ──
   assert(await page.locator('[data-sb-vulnerable-field]').isHidden(), 'type hidden until the box is ticked');
@@ -193,13 +256,15 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   await page.check('input[name=account_mode][value=register]');
   await page.click('[data-sb-submit]'); assert(/at least 8 characters/.test(await page.textContent('[data-sb-errors]')), 'register needs an 8+ character password');
   await page.screenshot({ path: OUT + '/05-step3.png', fullPage: true });
-  await page.fill('[name=name]', 'Test Person'); await page.selectOption('[name=title]', 'Dr');
+  await page.fill('[name=first_name]', 'Test'); await page.fill('[name=last_name]', 'Person'); await page.selectOption('[name=title]', 'Dr');
   await page.fill('[name=email]', 'test@example.com'); await page.fill('[name=phone]', '07700 900123');
   await page.fill('[name=flight_no]', 'ba1234'); await page.fill('[name=password]', 'correct horse battery');
   await page.waitForTimeout(3100);
   await page.click('[data-sb-submit]'); await page.waitForSelector('.sb-done:not([hidden])');
   assert(/SB-TEST42/.test(await page.textContent('.sb-done')) && /account is ready/.test(await page.textContent('.sb-done')), 'confirmation with account message');
   const b = log.posted[0];
+  assert.strictEqual(b.first_name, 'Test'); assert.strictEqual(b.last_name, 'Person'); assert.strictEqual(b.name, 'Test Person', 'first and last name are joined for the server');
+  assert.strictEqual(b.return_same, true); assert.deepStrictEqual(b.return_stops, []);
   assert.strictEqual(b.stops.length, 4); assert.strictEqual(b.is_return, true); assert.strictEqual(b.luggage, 5);
   assert.strictEqual(b.account_mode, 'register'); assert.strictEqual(b.password, 'correct horse battery');
   assert.strictEqual(b.airport_direction, 'arrival'); assert.strictEqual(b.vulnerable, true); assert.strictEqual(b.vulnerable_type, 'lone_female');
@@ -212,13 +277,13 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   const p2 = await newPage(browser); const pg = p2.page;
   await pg.goto(BASE + '/index.html'); await pg.waitForSelector('.sb-stop');
   await pg.selectOption('[name=airport_direction]', 'departure');
-  await pg.waitForSelector('.sb-stop--dropoff.is-resolved');
-  assert(/Inverness Airport/.test(await pg.inputValue('.sb-stop--dropoff input')), 'Departure puts the airport in the drop-off');
-  assert.strictEqual(await pg.inputValue('.sb-stop--pickup input'), '', 'pickup left for the customer');
+  await pg.waitForSelector('[data-sb-stops] .sb-stop--dropoff.is-resolved');
+  assert(/Inverness Airport/.test(await pg.inputValue('[data-sb-stops] .sb-stop--dropoff input')), 'Departure puts the airport in the drop-off');
+  assert.strictEqual(await pg.inputValue('[data-sb-stops] .sb-stop--pickup input'), '', 'pickup left for the customer');
   await pg.selectOption('[name=airport_direction]', 'arrival');
-  await pg.waitForSelector('.sb-stop--pickup.is-resolved');
-  assert(/Inverness Airport/.test(await pg.inputValue('.sb-stop--pickup input')), 'Arrival puts the airport in the pickup');
-  assert.strictEqual(await pg.inputValue('.sb-stop--dropoff input'), '', 'the airport is cleared from the drop-off');
+  await pg.waitForSelector('[data-sb-stops] .sb-stop--pickup.is-resolved');
+  assert(/Inverness Airport/.test(await pg.inputValue('[data-sb-stops] .sb-stop--pickup input')), 'Arrival puts the airport in the pickup');
+  assert.strictEqual(await pg.inputValue('[data-sb-stops] .sb-stop--dropoff input'), '', 'the airport is cleared from the drop-off');
   await pg.selectOption('[name=service]', 'corporate');
   assert(await pg.locator('[data-sb-only=airport]').first().isHidden(), 'direction select hidden for other services');
   await p2.ctx.close();
@@ -227,8 +292,8 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   const p3 = await newPage(browser); const q = p3.page;
   await q.goto(BASE + '/index.html'); await q.waitForSelector('.sb-stop');
   await q.selectOption('[name=service]', 'wedding');
-  await suggest(q, '.sb-stop--pickup', 'castle'); await pickFirst(q, '.sb-stop--pickup');
-  await suggest(q, '.sb-stop--dropoff', 'aberdeen'); await pickFirst(q, '.sb-stop--dropoff');
+  await suggest(q, '[data-sb-stops] .sb-stop--pickup', 'castle'); await pickFirst(q, '[data-sb-stops] .sb-stop--pickup');
+  await suggest(q, '[data-sb-stops] .sb-stop--dropoff', 'aberdeen'); await pickFirst(q, '[data-sb-stops] .sb-stop--dropoff');
   await q.waitForSelector('.sb-total--text');
   await q.click('[data-sb-next]'); await q.waitForSelector('[data-panel="2"]:not([hidden])');
   await q.click('[data-sb-next]'); await q.waitForSelector('[data-panel="3"]:not([hidden])');
@@ -240,8 +305,8 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   const p4 = await newPage(browser); const u = p4.page;
   await u.goto(BASE + '/index-user.html'); await u.waitForSelector('.sb-stop');
   await u.selectOption('[name=service]', 'corporate');
-  await suggest(u, '.sb-stop--pickup', 'castle'); await pickFirst(u, '.sb-stop--pickup');
-  await suggest(u, '.sb-stop--dropoff', 'aberdeen'); await pickFirst(u, '.sb-stop--dropoff');
+  await suggest(u, '[data-sb-stops] .sb-stop--pickup', 'castle'); await pickFirst(u, '[data-sb-stops] .sb-stop--pickup');
+  await suggest(u, '[data-sb-stops] .sb-stop--dropoff', 'aberdeen'); await pickFirst(u, '[data-sb-stops] .sb-stop--dropoff');
   await u.waitForSelector('.sb-total');
   await u.click('[data-sb-next]'); await u.waitForSelector('[data-panel="2"]:not([hidden])');
   await u.click('[data-sb-next]'); await u.waitForSelector('[data-panel="3"]:not([hidden])');
@@ -288,12 +353,12 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   const c2 = await newPage(browser); const sv = c2.page;
   await sv.goto(BASE + '/index.html'); await sv.waitForSelector('.sb-stop');
   await sv.selectOption('[name=service]', 'corporate');
-  await suggest(sv, '.sb-stop--pickup', 'castle'); await pickFirst(sv, '.sb-stop--pickup');
-  await suggest(sv, '.sb-stop--dropoff', 'aberdeen'); await pickFirst(sv, '.sb-stop--dropoff');
+  await suggest(sv, '[data-sb-stops] .sb-stop--pickup', 'castle'); await pickFirst(sv, '[data-sb-stops] .sb-stop--pickup');
+  await suggest(sv, '[data-sb-stops] .sb-stop--dropoff', 'aberdeen'); await pickFirst(sv, '[data-sb-stops] .sb-stop--dropoff');
   await sv.waitForSelector('.sb-total');
   await sv.click('[data-sb-next]'); await sv.waitForSelector('[data-panel="2"]:not([hidden])');
   await sv.click('[data-sb-next]'); await sv.waitForSelector('[data-panel="3"]:not([hidden])');
-  await sv.fill('[name=name]', 'Test Person'); await sv.fill('[name=email]', 'test@example.com'); await sv.fill('[name=phone]', '07700 900123'); await sv.check('[name=terms]');
+  await sv.fill('[name=first_name]', 'Test'); await sv.fill('[name=last_name]', 'Person'); await sv.fill('[name=email]', 'test@example.com'); await sv.fill('[name=phone]', '07700 900123'); await sv.check('[name=terms]');
   await sv.waitForTimeout(3100);
   const earliest = await sv.evaluate(() => { const d = new Date(Date.now() + 90 * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; });
   c2.log.bookingError = { code: 'sb_too_soon', message: 'We need at least 60 minutes notice.', data: { status: 400, earliest } };

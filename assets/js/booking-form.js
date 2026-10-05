@@ -32,7 +32,10 @@
 	var state = {
 		step: 1,
 		service: CFG.defaultService,
-		stops: [ newStop(), newStop() ],
+		stops: [ newStop( 'out' ), newStop( 'out' ) ],
+		// The return journey: the outbound route reversed (same), or its own pickup, via stops and drop-off.
+		ret: { same: true, stops: [ newStop( 'ret' ), newStop( 'ret' ) ] },
+		leg: 'out', // The tab showing.
 		vehicle: '',
 		quote: null,
 		quoteError: '',
@@ -45,9 +48,9 @@
 		startedAt: Date.now()
 	};
 
-	function newStop() {
+	function newStop( leg ) {
 		stopSeq += 1;
-		return { id: stopSeq, text: '', label: '', lat: null, lng: null, resolved: false, items: [], active: -1, timer: null, abort: null, ui: null };
+		return { id: stopSeq, leg: leg || 'out', locked: false, text: '', label: '', lat: null, lng: null, resolved: false, items: [], active: -1, timer: null, abort: null, ui: null };
 	}
 
 	// ── Small helpers ───────────────────────────────────────────
@@ -140,33 +143,54 @@
 
 	// ── Route stops (pickup, vias, add-via button, drop-off) ────
 
-	function stopRole( i ) {
+	function legStops( leg ) { return leg === 'ret' ? state.ret.stops : state.stops; }
+
+	function stopRole( i, leg ) {
 		if ( i === 0 ) { return 'pickup'; }
-		return i === state.stops.length - 1 ? 'dropoff' : 'via';
+		return i === legStops( leg ).length - 1 ? 'dropoff' : 'via';
 	}
 
-	function stopTitle( i ) {
-		var role = stopRole( i );
-		if ( role === 'pickup' ) { return 'Pickup'; }
-		if ( role === 'dropoff' ) { return 'Drop-off'; }
-		return 'Via stop ' + i;
+	function stopTitle( i, leg ) {
+		var role = stopRole( i, leg );
+		var pre = leg === 'ret' ? 'Return ' : '';
+		if ( role === 'pickup' ) { return leg === 'ret' ? 'Return pickup' : 'Pickup'; }
+		if ( role === 'dropoff' ) { return leg === 'ret' ? 'Return drop-off' : 'Drop-off'; }
+		return pre + ( pre ? 'via stop ' : 'Via stop ' ) + i;
 	}
 
-	function renderStops( focusId ) {
-		var list = $( '[data-sb-stops]' );
+	/** The return list is a read-only mirror of the way out while "same route in reverse" is ticked. */
+	function syncReturn() {
+		if ( ! state.ret.same ) { return; }
+		state.ret.stops = state.stops.slice().reverse().map( function ( s ) {
+			var n = newStop( 'ret' );
+			n.text = s.text; n.label = s.label; n.lat = s.lat; n.lng = s.lng; n.resolved = s.resolved; n.locked = true;
+			return n;
+		} );
+		renderStops( 'ret' );
+	}
+
+	function renderStops( leg, focusId ) {
+		if ( typeof leg === 'number' ) { focusId = leg; leg = 'out'; }
+		leg = leg || 'out';
+		var list = $( leg === 'ret' ? '[data-sb-stops-ret]' : '[data-sb-stops]' );
+		if ( ! list ) { return; }
 		list.textContent = '';
-		var last = state.stops.length - 1;
-		var vias = state.stops.length - 2;
-		var left = CFG.maxVias - vias;
+		var stops = legStops( leg );
+		var locked = leg === 'ret' && state.ret.same;
+		var last = stops.length - 1;
+		var left = CFG.maxVias - ( stops.length - 2 );
+		var legs = leg === 'ret'
+			? ( state.ret.same ? ( state.quote && state.quote.legs ? state.quote.legs.slice().reverse() : null ) : ( state.quote ? state.quote.return_legs : null ) )
+			: ( state.quote ? state.quote.legs : null );
 
-		state.stops.forEach( function ( stop, i ) {
-			if ( i === last ) {
-				list.appendChild( buildAddRow( left ) );
+		stops.forEach( function ( stop, i ) {
+			if ( i === last && ! locked ) {
+				list.appendChild( buildAddRow( left, leg ) );
 			}
 			list.appendChild( buildStop( stop, i ) );
 
 			if ( i < last ) {
-				var legM = state.quote && state.quote.legs ? state.quote.legs[ i ] : null;
+				var legM = legs ? legs[ i ] : null;
 				list.appendChild( el( 'li', { 'class': 'sb-legrow', text: legM != null ? '↓ ' + miles( legM ) + ' miles' : '' } ) );
 			}
 		} );
@@ -177,24 +201,24 @@
 		}
 	}
 
-	function buildAddRow( left ) {
+	function buildAddRow( left, leg ) {
 		var btn = el( 'button', { type: 'button', 'class': 'sb-btn sb-btn--ghost sb-add-via' }, [
 			el( 'span', { 'aria-hidden': 'true', text: '+' } ),
 			el( 'span', { text: left > 0 ? 'Add a via stop (' + left + ' left)' : 'Via stop limit reached' } )
 		] );
 		btn.disabled = left <= 0;
-		btn.addEventListener( 'click', addVia );
+		btn.addEventListener( 'click', function () { addVia( leg ); } );
 		return el( 'li', { 'class': 'sb-addrow' }, [ el( 'span', { 'class': 'sb-node sb-node--add', 'aria-hidden': 'true', text: '+' } ), btn ] );
 	}
 
 	function buildStop( stop, i ) {
-		var role = stopRole( i );
+		var role = stopRole( i, stop.leg );
 		var inputId = 'sb-stop-input-' + stop.id;
 		var listId = 'sb-stop-list-' + stop.id;
 		var li = el( 'li', { 'class': 'sb-stop sb-stop--' + role + ( stop.resolved ? ' is-resolved' : '' ) } );
 
 		li.appendChild( el( 'span', { 'class': 'sb-node', 'aria-hidden': 'true', text: role === 'pickup' ? 'A' : ( role === 'dropoff' ? 'B' : String( i ) ) } ) );
-		li.appendChild( el( 'label', { 'for': inputId, text: stopTitle( i ) } ) );
+		li.appendChild( el( 'label', { 'for': inputId, text: stopTitle( i, stop.leg ) } ) );
 
 		var input = el( 'input', {
 			type: 'text',
@@ -211,14 +235,15 @@
 			'aria-describedby': inputId + '-meta'
 		} );
 		input.value = stop.text;
+		if ( stop.locked ) { input.readOnly = true; input.setAttribute( 'aria-readonly', 'true' ); li.classList.add( 'is-locked' ); }
 
 		var meta = el( 'p', { 'class': 'sb-stop-meta', id: inputId + '-meta', 'aria-live': 'polite' } );
-		var ul = el( 'ul', { 'class': 'sb-results', id: listId, role: 'listbox', 'aria-label': 'Suggestions for ' + stopTitle( i ) } );
+		var ul = el( 'ul', { 'class': 'sb-results', id: listId, role: 'listbox', 'aria-label': 'Suggestions for ' + stopTitle( i, stop.leg ) } );
 		ul.hidden = true;
 
 		var row = el( 'div', { 'class': 'sb-search' }, [ input ] );
-		if ( role === 'via' ) {
-			var rm = el( 'button', { type: 'button', 'class': 'sb-remove', 'aria-label': 'Remove ' + stopTitle( i ), text: 'Remove' } );
+		if ( role === 'via' && ! stop.locked ) {
+			var rm = el( 'button', { type: 'button', 'class': 'sb-remove', 'aria-label': 'Remove ' + stopTitle( i, stop.leg ), text: 'Remove' } );
 			rm.addEventListener( 'click', function () { removeStop( stop ); } );
 			row.appendChild( rm );
 		}
@@ -237,17 +262,19 @@
 	}
 
 	function removeStop( stop ) {
-		state.stops = state.stops.filter( function ( s ) { return s !== stop; } );
-		renderStops();
+		if ( stop.leg === 'ret' ) { state.ret.stops = state.ret.stops.filter( function ( s ) { return s !== stop; } ); } else { state.stops = state.stops.filter( function ( s ) { return s !== stop; } ); }
+		renderStops( stop.leg );
 		scheduleQuote();
 		updateMap();
 	}
 
-	function addVia() {
-		if ( state.stops.length - 2 >= CFG.maxVias ) { return; }
-		var via = newStop();
-		state.stops.splice( state.stops.length - 1, 0, via );
-		renderStops( via.id );
+	function addVia( leg ) {
+		leg = leg || 'out';
+		var stops = legStops( leg );
+		if ( stops.length - 2 >= CFG.maxVias ) { return; }
+		var via = newStop( leg );
+		stops.splice( stops.length - 1, 0, via );
+		renderStops( leg, via.id );
 	}
 
 	// Suggestions while typing ------------------------------------
@@ -382,7 +409,12 @@
 	}
 
 	function allResolved() {
-		return state.stops.every( function ( s ) { return s.resolved; } );
+		return state.stops.every( function ( s ) { return s.resolved; } ) && returnResolved();
+	}
+
+	function returnOwnRoute() { return form.elements.is_return.checked && ! state.ret.same; }
+	function returnResolved() {
+		return ! returnOwnRoute() || state.ret.stops.every( function ( s ) { return s.resolved; } );
 	}
 
 	// Airport transfer: Departure fills the drop-off, Arrival fills the pickup.
@@ -521,11 +553,14 @@
 			passengers: num( 'passengers', 1 ),
 			luggage: num( 'luggage', 0 ),
 			is_return: form.elements.is_return.checked,
-			stops: state.stops.map( function ( s ) { return { label: s.label, lat: s.lat, lng: s.lng }; } )
+			return_same: state.ret.same,
+			stops: state.stops.map( function ( s ) { return { label: s.label, lat: s.lat, lng: s.lng }; } ),
+			return_stops: returnOwnRoute() ? state.ret.stops.map( function ( s ) { return { label: s.label, lat: s.lat, lng: s.lng }; } ) : []
 		};
 	}
 
 	function scheduleQuote() {
+		syncReturn();
 		clearTimeout( state.quoteTimer );
 		state.quoteTimer = setTimeout( refreshQuote, 350 );
 		if ( ! allResolved() ) {
@@ -577,9 +612,15 @@
 
 	// Fill in the leg distances without rebuilding the inputs (which would lose focus).
 	function updateLegs() {
-		$$( '.sb-legrow' ).forEach( function ( row, i ) {
-			var m = state.quote && state.quote.legs ? state.quote.legs[ i ] : null;
-			row.textContent = m != null ? '↓ ' + miles( m ) + ' miles' : '';
+		var q = state.quote;
+		var back = q && q.legs ? ( q.return_legs || q.legs.slice().reverse() ) : null;
+		[ [ '[data-sb-stops]', q ? q.legs : null ], [ '[data-sb-stops-ret]', back ] ].forEach( function ( pair ) {
+			var list = $( pair[ 0 ] );
+			if ( ! list ) { return; }
+			$$( '.sb-legrow', list ).forEach( function ( row, i ) {
+				var m = pair[ 1 ] ? pair[ 1 ][ i ] : null;
+				row.textContent = m != null ? '↓ ' + miles( m ) + ' miles' : '';
+			} );
 		} );
 	}
 
@@ -614,7 +655,9 @@
 			box.appendChild( el( 'p', { 'class': 'sb-total-label', text: 'Estimated fare' } ) );
 			box.appendChild( el( 'p', { 'class': 'sb-total', text: money( q.total_pence ) } ) );
 		}
-		box.appendChild( el( 'p', { 'class': 'sb-trip', text: miles( q.distance_m ) + ' miles · ' + duration( q.duration_s ) + ( form.elements.is_return.checked ? ' each way' : '' ) } ) );
+		box.appendChild( el( 'p', { 'class': 'sb-trip', text: ( q.return_distance_m
+			? 'Way out ' + miles( q.distance_m ) + ' miles · return ' + miles( q.return_distance_m ) + ' miles'
+			: miles( q.distance_m ) + ' miles · ' + duration( q.duration_s ) + ( form.elements.is_return.checked ? ' each way' : '' ) ) } ) );
 
 		if ( q.lines && q.lines.length ) {
 			var dl = el( 'dl', { 'class': 'sb-lines' } );
@@ -743,7 +786,7 @@
 	function initMap() {
 		if ( ! window.L ) { return; }
 		L.Icon.Default.imagePath = CFG.imagePath;
-		map = L.map( $( '[data-sb-map]' ), { scrollWheelZoom: false } ).setView( CFG.center, CFG.zoom );
+		map = L.map( $( '[data-sb-map]' ), { scrollWheelZoom: true } ).setView( CFG.center, CFG.zoom );
 		L.tileLayer( CFG.tiles.url, { maxZoom: 19, attribution: CFG.tiles.attribution } ).addTo( map );
 		markerLayer = L.layerGroup().addTo( map );
 		routeLayer = L.layerGroup().addTo( map );
@@ -757,14 +800,14 @@
 
 		state.stops.forEach( function ( s, i ) {
 			if ( ! s.resolved ) { return; }
-			var role = stopRole( i );
+			var role = stopRole( i, 'out' );
 			var icon = L.divIcon( {
 				className: '',
 				html: '<span class="sb-pin sb-pin--' + role + '">' + ( role === 'pickup' ? 'A' : ( role === 'dropoff' ? 'B' : i ) ) + '</span>',
 				iconSize: [ 26, 26 ],
 				iconAnchor: [ 13, 13 ]
 			} );
-			L.marker( [ s.lat, s.lng ], { icon: icon, title: stopTitle( i ) + ': ' + s.label, keyboard: false } ).addTo( markerLayer );
+			L.marker( [ s.lat, s.lng ], { icon: icon, title: stopTitle( i, 'out' ) + ': ' + s.label, keyboard: false } ).addTo( markerLayer );
 			pts.push( [ s.lat, s.lng ] );
 		} );
 
@@ -774,12 +817,32 @@
 		if ( line && line.length > 1 ) {
 			L.polyline( line, { color: '#ffffff', weight: 9, opacity: 0.9 } ).addTo( routeLayer );
 			var pl = L.polyline( line, { color: '#e20a17', weight: 5, opacity: 1 } ).addTo( routeLayer );
-			map.fitBounds( pl.getBounds(), { padding: [ 30, 30 ] } );
+			var bounds = pl.getBounds();
+			// A return on its own route is drawn as a dashed dark line.
+			var back = state.quote.return_geometry && returnOwnRoute() ? state.quote.return_geometry.map( function ( c ) { return [ c[ 1 ], c[ 0 ] ]; } ) : null;
+			if ( back && back.length > 1 ) {
+				var bl = L.polyline( back, { color: '#101820', weight: 4, opacity: 0.85, dashArray: '2 9', lineCap: 'round' } ).addTo( routeLayer );
+				bounds = bounds.extend( bl.getBounds() );
+			}
+			map.fitBounds( bounds, { padding: [ 30, 30 ] } );
 		} else if ( pts.length > 1 ) {
 			map.fitBounds( pts, { padding: [ 40, 40 ] } );
 		} else if ( pts.length === 1 ) {
 			map.setView( pts[ 0 ], 14 );
 		}
+	}
+
+	// ── Journey / Return journey tabs ────────────────────────────
+
+	function showLeg( leg ) {
+		state.leg = leg;
+		$$( '[data-sb-tab]' ).forEach( function ( t ) {
+			var on = t.getAttribute( 'data-sb-tab' ) === leg;
+			t.setAttribute( 'aria-selected', on ? 'true' : 'false' );
+			t.tabIndex = on ? 0 : -1;
+		} );
+		$$( '[data-sb-tabpanel]' ).forEach( function ( p ) { p.hidden = p.getAttribute( 'data-sb-tabpanel' ) !== leg; } );
+		if ( leg === 'ret' ) { syncReturn(); }
 	}
 
 	// ── Account choice (step 3) ─────────────────────────────────
@@ -877,8 +940,13 @@
 
 		if ( n === 1 ) {
 			state.stops.forEach( function ( s, i ) {
-				if ( ! s.resolved ) { errors.push( stopTitle( i ) + ': pick an address from the suggestions.' ); }
+				if ( ! s.resolved ) { errors.push( stopTitle( i, 'out' ) + ': pick an address from the suggestions.' ); }
 			} );
+			if ( returnOwnRoute() ) {
+				state.ret.stops.forEach( function ( s, i ) {
+					if ( ! s.resolved ) { errors.push( stopTitle( i, 'ret' ) + ': pick an address from the suggestions.' ); }
+				} );
+			}
 			if ( isAirport() && ! val( 'airport_direction' ) ) {
 				errors.push( 'Choose whether this airport transfer is a departure or an arrival.' );
 				mark( 'airport_direction' );
@@ -913,7 +981,8 @@
 
 		if ( n === 3 ) {
 			var mode = accountMode();
-			var name = val( 'name' ).trim();
+			var first = val( 'first_name' ).trim();
+			var last = val( 'last_name' ).trim();
 			var phone = val( 'phone' ).trim();
 			var email = val( 'email' ).trim();
 
@@ -923,7 +992,8 @@
 
 			// Guests and new accounts type their details; saved-details bookings only if something is missing.
 			if ( detailsVisible() ) {
-				if ( name.length < 2 ) { errors.push( 'Enter your full name.' ); mark( 'name' ); }
+				if ( ! first ) { errors.push( 'Enter your first name.' ); mark( 'first_name' ); }
+				if ( ! last ) { errors.push( 'Enter your last name.' ); mark( 'last_name' ); }
 				if ( ! PHONE_RE.test( phone ) ) { errors.push( 'Enter a phone number we can reach you on.' ); mark( 'phone' ); }
 			}
 			if ( mode !== 'account' && ! EMAIL_RE.test( email ) ) { errors.push( 'Enter a valid email address.' ); mark( 'email' ); }
@@ -977,15 +1047,23 @@
 		row( 'Pickup time', fmtDateTime( pickupValue() ) );
 		if ( form.elements.is_return.checked ) { row( 'Return time', fmtDateTime( returnValue() ) ); }
 		state.stops.forEach( function ( s, i ) {
-			var role = stopRole( i );
-			row( role === 'pickup' ? 'Pickup from' : ( role === 'dropoff' ? 'Drop-off at' : stopTitle( i ) ), s.label );
+			var role = stopRole( i, 'out' );
+			row( role === 'pickup' ? 'Pickup from' : ( role === 'dropoff' ? 'Drop-off at' : stopTitle( i, 'out' ) ), s.label );
 		} );
+		if ( returnOwnRoute() ) {
+			state.ret.stops.forEach( function ( s, i ) {
+				var role = stopRole( i, 'ret' );
+				row( role === 'pickup' ? 'Return from' : ( role === 'dropoff' ? 'Return to' : stopTitle( i, 'ret' ) ), s.label );
+			} );
+		} else if ( form.elements.is_return.checked ) {
+			row( 'Return route', 'Same route in reverse' );
+		}
 		row( 'Car', v ? v.label : '' );
 		row( 'Passengers', String( num( 'passengers', 1 ) ) );
 		row( 'Suitcases', String( num( 'luggage', 0 ) ) );
 		row( 'Carry-on bags', String( num( 'carry_on', 0 ) ) );
 		if ( q ) {
-			row( 'Distance', miles( q.distance_m ) + ' miles' );
+			row( 'Distance', q.return_distance_m ? miles( q.distance_m ) + ' miles out, ' + miles( q.return_distance_m ) + ' miles back' : miles( q.distance_m ) + ' miles' );
 			row( 'Fare', q.quote_only ? 'We will quote this for you' : money( q.total_pence ) + ( form.elements.is_return.checked ? ' (return included)' : '' ) );
 		}
 		box.appendChild( dl );
@@ -1013,9 +1091,10 @@
 		body.vulnerable = form.elements.vulnerable.checked;
 		body.vulnerable_type = body.vulnerable ? val( 'vulnerable_type' ) : '';
 		body.account_mode = mode;
-		[ 'title', 'name', 'email', 'phone', 'flight_no', 'company', 'notes', 'website' ].forEach( function ( n ) {
-			if ( form.elements[ n ] ) { body[ n ] = form.elements[ n ].value; }
+		[ 'title', 'first_name', 'last_name', 'email', 'phone', 'flight_no', 'company', 'notes', 'website' ].forEach( function ( n ) {
+			if ( form.elements[ n ] ) { body[ n ] = form.elements[ n ].value.trim(); }
 		} );
+		body.name = ( body.first_name + ' ' + body.last_name ).trim();
 		if ( mode === 'register' || mode === 'login' ) { body.password = val( 'password' ); }
 		body.carry_on = num( 'carry_on', 0 );
 		body.terms = form.elements.terms.checked;
@@ -1079,9 +1158,32 @@
 		form.elements.airport_direction.addEventListener( 'change', function () { applyAirportDirection(); scheduleQuote(); } );
 
 		form.elements.is_return.addEventListener( 'change', function () {
-			$( '[data-sb-return-field]' ).hidden = ! this.checked;
+			$( '[data-sb-tabs]' ).hidden = ! this.checked;
+			if ( ! this.checked ) { showLeg( 'out' ); }
 			if ( this.checked && ! val( 'return_date' ) && pickers.returnDate ) { pickers.returnDate.setDate( val( 'pickup_date' ), true ); }
 			scheduleQuote();
+			updateMap();
+		} );
+
+		// Return route: ticked mirrors the way out; unticked starts empty for the customer to fill in.
+		form.elements.return_same.addEventListener( 'change', function () {
+			state.ret.same = this.checked;
+			if ( ! this.checked ) {
+				state.ret.stops = [ newStop( 'ret' ), newStop( 'ret' ) ];
+				renderStops( 'ret' );
+			}
+			scheduleQuote();
+			updateMap();
+		} );
+
+		var tabs = $$( '[data-sb-tab]' );
+		tabs.forEach( function ( t ) {
+			t.addEventListener( 'click', function () { showLeg( t.getAttribute( 'data-sb-tab' ) ); } );
+			t.addEventListener( 'keydown', function ( e ) {
+				var at = tabs.indexOf( t ), to = -1;
+				if ( e.key === 'ArrowRight' ) { to = ( at + 1 ) % tabs.length; } else if ( e.key === 'ArrowLeft' ) { to = ( at + tabs.length - 1 ) % tabs.length; } else if ( e.key === 'Home' ) { to = 0; } else if ( e.key === 'End' ) { to = tabs.length - 1; }
+				if ( to > -1 ) { e.preventDefault(); showLeg( tabs[ to ].getAttribute( 'data-sb-tab' ) ); tabs[ to ].focus(); }
+			} );
 		} );
 
 		form.elements.vulnerable.addEventListener( 'change', function () {
@@ -1119,13 +1221,16 @@
 
 	function init() {
 		if ( CFG.user ) {
-			form.elements.name.value = CFG.user.name || '';
+			var parts = String( CFG.user.name || '' ).trim().split( /\s+/ );
+			form.elements.first_name.value = parts.length > 1 ? parts.slice( 0, -1 ).join( ' ' ) : ( parts[ 0 ] || '' );
+			form.elements.last_name.value = parts.length > 1 ? parts[ parts.length - 1 ] : '';
 			form.elements.phone.value = CFG.user.phone || '';
 			form.elements.email.value = CFG.user.email || '';
 		}
 		initPickers();
 		syncClock();
-		renderStops();
+		renderStops( 'out' );
+		syncReturn();
 		renderSummary();
 		renderVehicles();
 		initMap();

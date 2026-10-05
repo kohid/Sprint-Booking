@@ -79,5 +79,16 @@ check( 'minibus service blocks saloon', Pricing::vehicle_allowed( $cfg, 'minibus
 check( 'airport allows saloon', Pricing::vehicle_allowed( $cfg, 'airport', 'saloon' ), true );
 check( 'totals_by_vehicle keys for minibus service', array_keys( Pricing::totals_by_vehicle( $cfg, $ten_miles, array_merge( $base, array( 'service' => 'minibus' ) ) ) ), array( 'minibus8' ) );
 
+// A return on its own route is priced on its own distance and via stops.
+$twenty_miles = (int) round( 20 * Pricing::METRES_PER_MILE );
+$own = array_merge( $base, array( 'is_return' => true, 'return_distance_m' => $twenty_miles, 'return_vias' => 1 ) );
+// Out: 350 + 2400 = 2750. Back: 350 + 4800 + 150 (one via) = 5300.
+check( 'return on its own route uses its own distance and vias', Pricing::quote( $cfg, $ten_miles, $own )['total_pence'], 2750 + 5300 );
+check( 'discount applies to the return leg only', Pricing::quote( $cfg_disc, $ten_miles, $own )['total_pence'], 2750 + (int) round( 5300 * 0.9 ) );
+$short = array_merge( $base, array( 'is_return' => true, 'return_distance_m' => (int) round( 0.5 * Pricing::METRES_PER_MILE ) ) );
+check( 'a short return still pays the minimum fare', Pricing::quote( $cfg, $ten_miles, $short )['total_pence'], 2750 + 600 );
+check( 'return distance is ignored when there is no return', Pricing::quote( $cfg, $ten_miles, array_merge( $base, array( 'return_distance_m' => $twenty_miles ) ) )['total_pence'], 2750 );
+check( 'luggage is still charged once with an own-route return', Pricing::quote( $cfg, $ten_miles, array_merge( $own, array( 'luggage' => 3 ) ) )['total_pence'], 2750 + 5300 + 150 );
+
 echo $failures ? "\n$failures failed\n" : "\nAll passed\n";
 exit( $failures ? 1 : 0 );

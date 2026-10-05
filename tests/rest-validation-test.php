@@ -49,6 +49,21 @@ t( 'return after pickup accepted', is_array( call( 'read_options', $cfg, array_m
 $q = call( 'read_options', $cfg, array( 'service' => 'airport', 'airport_direction' => 'arrival', 'passengers' => 6 ), false );
 t( 'quote without a vehicle picks one that seats everyone', is_array( $q ) && $q['vehicle'] === 'mpv' );
 
+// Return route: same route reversed unless the customer gave their own.
+$pt = static fn( $label, $lat, $lng ) => array( 'label' => $label, 'lat' => $lat, 'lng' => $lng );
+$back = array( $pt( 'Test Hotel, Nairn', 57.58, -3.87 ), $pt( 'Test Castle, Inverness', 57.48, -4.22 ) );
+$opts_ret = array( 'is_return' => true );
+t( 'no return means no return route', null === call( 'read_return', $cfg, array( 'return_same' => false, 'return_stops' => $back ), array( 'is_return' => false ) ) );
+t( 'return with no flag is the same route reversed', null === call( 'read_return', $cfg, array(), $opts_ret ) );
+t( 'return_same true means the same route reversed', null === call( 'read_return', $cfg, array( 'return_same' => true, 'return_stops' => $back ), $opts_ret ) );
+t( 'return_same "1" and "true" mean the same route', null === call( 'read_return', $cfg, array( 'return_same' => '1' ), $opts_ret ) && null === call( 'read_return', $cfg, array( 'return_same' => 'true' ), $opts_ret ) );
+t( 'return_same false takes the return stops', $back === call( 'read_return', $cfg, array( 'return_same' => false, 'return_stops' => $back ), $opts_ret ) );
+t( 'return_same "0" takes the return stops', is_array( call( 'read_return', $cfg, array( 'return_same' => '0', 'return_stops' => $back ), $opts_ret ) ) );
+t( 'own route but no stops is refused', is_wp_error( call( 'read_return', $cfg, array( 'return_same' => false ), $opts_ret ) ) );
+t( 'own route with one stop is refused', is_wp_error( call( 'read_return', $cfg, array( 'return_same' => false, 'return_stops' => array( $back[0] ) ), $opts_ret ) ) );
+t( 'own route outside the UK is refused', is_wp_error( call( 'read_return', $cfg, array( 'return_same' => false, 'return_stops' => array( $back[0], $pt( 'Paris', 48.85, 2.35 ) ) ), $opts_ret ) ) );
+t( 'own route with an unresolved stop is refused', is_wp_error( call( 'read_return', $cfg, array( 'return_same' => false, 'return_stops' => array( $back[0], array( 'label' => 'x' ) ) ), $opts_ret ) ) );
+
 // Notice period: the error says when the earliest pickup is, and the clock endpoint agrees with it.
 $err = call( 'read_options', $cfg, array_merge( $good, array( 'pickup_at' => $soon ) ), true );
 t( 'too-soon pickup has its own error code', is_wp_error( $err ) && 'sb_too_soon' === $err->code );

@@ -36,7 +36,16 @@ final class Mailer {
 			$ret     = ( new \DateTimeImmutable( $b['return_at'], new \DateTimeZone( 'UTC' ) ) )->setTimezone( $tz )->format( 'D j M Y, H:i' );
 			$lines[] = 'Return at: ' . $ret;
 		}
-		$lines   = array_merge( $lines, $route );
+		$lines = array_merge( $lines, $route );
+		if ( ! empty( $b['return_stops'] ) && is_array( $b['return_stops'] ) ) {
+			$lines[] = 'Return route:';
+			$last    = count( $b['return_stops'] ) - 1;
+			foreach ( $b['return_stops'] as $i => $s ) {
+				$lines[] = ( 0 === $i ? 'Pickup:   ' : ( $i === $last ? 'Drop-off: ' : 'Via:      ' ) ) . $s['label'];
+			}
+		} elseif ( ! empty( $b['return_at'] ) ) {
+			$lines[] = '(The return is the same route in reverse.)';
+		}
 		$lines[] = sprintf( 'Distance:  %.1f miles', $b['distance_m'] / Pricing::METRES_PER_MILE ) . ( $b['route_estimated'] ? ' (estimated)' : '' );
 		$lines[] = 'Passengers: ' . $b['passengers'] . ', suitcases: ' . $b['luggage'] . ', carry-on: ' . $b['carry_on'];
 		$lines[] = 'Vehicle:   ' . ( $cfg['vehicles'][ $b['vehicle'] ]['label'] ?? $b['vehicle'] );

@@ -54,6 +54,8 @@ final class Activator {
 			pickup_at DATETIME NOT NULL,
 			return_at DATETIME NULL,
 			stops LONGTEXT NOT NULL,
+			return_stops LONGTEXT NULL,
+			return_distance_m INT(10) UNSIGNED NULL,
 			distance_m INT(10) UNSIGNED NOT NULL DEFAULT 0,
 			duration_s INT(10) UNSIGNED NOT NULL DEFAULT 0,
 			route_estimated TINYINT(1) NOT NULL DEFAULT 0,

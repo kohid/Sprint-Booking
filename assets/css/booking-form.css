@@ -23,8 +23,10 @@
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
 	gap: 1.5rem;
-	max-width: 1120px;
-	margin: 0 auto;
+	/* Fill whatever column the page gives it: an Elementor section or container, Full Width or Boxed. */
+	width: 100%;
+	max-width: none;
+	margin: 0;
 	color: var(--sb-ink);
 	font-size: 1rem;
 	line-height: 1.5;
@@ -325,7 +327,7 @@
 .sb-grid--3 { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 640px) { .sb-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .sb-grid--title { grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 640px) { .sb-grid--title { grid-template-columns: 8rem minmax(0, 1fr); } }
+@media (min-width: 640px) { .sb-grid--title { grid-template-columns: 8rem minmax(0, 1fr) minmax(0, 1fr); } }
 
 .sb-app select {
 	display: block;
@@ -357,7 +359,7 @@
 .sb-app input[type="time"]:focus { outline: none; border-color: var(--sb-red); box-shadow: var(--sb-ring); }
 
 .sb-check--block { margin: 0.25rem 0 1rem; }
-.sb-return { margin: 0 0 1rem; padding: 1rem; border-left: 3px solid var(--sb-red); background: var(--sb-mist); border-radius: 0 var(--sb-radius) var(--sb-radius) 0; }
+.sb-return { display: none; margin: 0 0 1rem; padding: 1rem; border-left: 3px solid var(--sb-red); background: var(--sb-mist); border-radius: 0 var(--sb-radius) var(--sb-radius) 0; }
 
 .sb-card { margin: 0 0 1.5rem; padding: 1rem 1.15rem; border: 1px solid var(--sb-line); border-radius: var(--sb-radius); background: var(--sb-mist); }
 .sb-review { margin: 0; display: grid; gap: 0.15rem; }
@@ -613,3 +615,28 @@
 .sb-app .flatpickr-wrapper { display: block; width: 100%; position: relative; }
 .sb-app .flatpickr-calendar.static { position: absolute; top: calc(100% + 4px); left: 0; margin: 0; }
 .sb-app .flatpickr-calendar.static.open { z-index: 40; }
+
+
+/* ── Journey / Return journey tabs ───────────────────── */
+.sb-tabs { display: flex; gap: 0.25rem; margin: 0 0 1.25rem; border-bottom: 1px solid var(--sb-line); }
+.sb-tab {
+	position: relative;
+	margin: 0 0 -1px;
+	padding: 0.7rem 1.15rem;
+	border: 1px solid transparent;
+	border-radius: var(--sb-radius) var(--sb-radius) 0 0;
+	background: transparent;
+	color: var(--sb-slate);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+.sb-tab:hover { color: var(--sb-ink); background: var(--sb-mist); }
+.sb-tab[aria-selected="true"] { color: var(--sb-red-dark); background: var(--sb-white); border-color: var(--sb-line); border-bottom-color: var(--sb-white); }
+.sb-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0.9rem; right: 0.9rem; top: -1px; height: 3px; border-radius: 0 0 3px 3px; background: var(--sb-red); }
+.sb-tab:focus-visible { outline: none; box-shadow: var(--sb-ring); }
+.sb-leg > .sb-check--block { padding: 0.75rem 1rem; border-radius: var(--sb-radius); background: var(--sb-mist); }
+
+/* A return that mirrors the way out cannot be edited. */
+.sb-stop.is-locked .sb-search input { background: var(--sb-mist); color: var(--sb-slate); cursor: default; }
+.sb-stop.is-locked .sb-search input:focus { box-shadow: none; border-color: var(--sb-line); }

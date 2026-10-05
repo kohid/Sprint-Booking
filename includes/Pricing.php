@@ -21,7 +21,8 @@ final class Pricing {
 	 *
 	 * @param array $cfg        Settings::get() shape.
 	 * @param int   $distance_m Total driving distance, pickup to final drop-off, via stops included.
-	 * @param array $opts       vias (int), vehicle (key), service (key), luggage (int), is_return (bool).
+	 * @param array $opts       vias (int), vehicle (key), service (key), luggage (int), is_return (bool);
+	 *                          optional return_distance_m and return_vias when the return takes its own route.
 	 * @return array{quote_only:bool, reason:?string, lines:array<int,array{key:string,pence:int}>, total_pence:?int}
 	 */
 	public static function quote( array $cfg, int $distance_m, array $opts ): array {
@@ -38,23 +39,26 @@ final class Pricing {
 			return self::quote_only( 'route' );
 		}
 
-		$vias     = max( 0, (int) ( $opts['vias'] ?? 0 ) );
-		$luggage  = max( 0, (int) ( $opts['luggage'] ?? 0 ) );
+		$vias      = max( 0, (int) ( $opts['vias'] ?? 0 ) );
+		$luggage   = max( 0, (int) ( $opts['luggage'] ?? 0 ) );
 		$is_return = ! empty( $opts['is_return'] );
 
-		$miles    = $distance_m / self::METRES_PER_MILE;
-		$base     = (int) $cfg['base_fee_pence'];
-		$distance = (int) round( $miles * (int) $cfg['rate_per_mile_pence'] );
+		$out     = self::journey( $cfg, $distance_m, $vias, $vehicle );
+		$base     = $out['base'];
+		$distance = $out['distance'];
+		$uplift   = $out['uplift'];
+		$min_adj  = $out['min_adj'];
+		$via_fee  = $out['via_fee'];
+		$journey  = $out['journey'];
 
-		$subtotal = $base + $distance;
-		$uplift   = max( 0, (int) round( $subtotal * ( (float) $vehicle['multiplier'] - 1 ) ) );
-		$fare     = $subtotal + $uplift;
-		$min_adj  = max( 0, (int) $cfg['minimum_fare_pence'] - $fare );
-		$via_fee  = $vias * (int) $cfg['via_fee_pence'];
-		$journey  = $fare + $min_adj + $via_fee;
-
+		// A return on the same route (reversed) costs the same as the way out. A return on its own route is
+		// priced on its own distance and via stops, then the return discount applies to that leg.
+		$back = $journey;
+		if ( $is_return && (int) ( $opts['return_distance_m'] ?? 0 ) > 0 ) {
+			$back = self::journey( $cfg, (int) $opts['return_distance_m'], max( 0, (int) ( $opts['return_vias'] ?? 0 ) ), $vehicle )['journey'];
+		}
 		$return_leg = $is_return
-			? (int) round( $journey * ( 100 - (int) $cfg['return_discount_percent'] ) / 100 )
+			? (int) round( $back * ( 100 - (int) $cfg['return_discount_percent'] ) / 100 )
 			: 0;
 
 		$extra_bags = max( 0, $luggage - (int) $cfg['free_luggage'] );
@@ -85,6 +89,31 @@ final class Pricing {
 			'reason'      => null,
 			'lines'       => $lines,
 			'total_pence' => $journey + $return_leg + $luggage_fee,
+		);
+	}
+
+	/**
+	 * One leg of fare: starting fee + distance, car uplift, minimum fare top-up and via fees.
+	 *
+	 * @param array $vehicle A Settings vehicle entry.
+	 * @return array{base:int,distance:int,uplift:int,min_adj:int,via_fee:int,journey:int}
+	 */
+	private static function journey( array $cfg, int $distance_m, int $vias, array $vehicle ): array {
+		$miles    = $distance_m / self::METRES_PER_MILE;
+		$base     = (int) $cfg['base_fee_pence'];
+		$distance = (int) round( $miles * (int) $cfg['rate_per_mile_pence'] );
+		$subtotal = $base + $distance;
+		$uplift   = max( 0, (int) round( $subtotal * ( (float) $vehicle['multiplier'] - 1 ) ) );
+		$fare     = $subtotal + $uplift;
+		$min_adj  = max( 0, (int) $cfg['minimum_fare_pence'] - $fare );
+		$via_fee  = $vias * (int) $cfg['via_fee_pence'];
+		return array(
+			'base'     => $base,
+			'distance' => $distance,
+			'uplift'   => $uplift,
+			'min_adj'  => $min_adj,
+			'via_fee'  => $via_fee,
+			'journey'  => $fare + $min_adj + $via_fee,
 		);
 	}
 
