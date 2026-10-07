@@ -142,7 +142,8 @@ final class Mailer {
 			$contact[] = array( 'Notes', (string) $b['notes'] );
 		}
 		$reply = 'Reply-To: ' . str_replace( array( "\r", "\n" ), '', $b['customer_name'] ) . ' <' . $b['customer_email'] . '>';
-		self::send_template(
+		if ( ! empty( $cfg['notify_office'] ) ) {
+			self::send_template(
 			(string) $office,
 			( $quote ? 'Quote request ' : 'New booking ' ) . $ref_text . ( $ret ? '' : '' ),
 			array(
@@ -157,7 +158,8 @@ final class Mailer {
 			),
 			array( $reply ),
 			'office'
-		);
+			);
+		}
 
 		// Customer copy.
 		$buttons = array();
@@ -212,21 +214,62 @@ final class Mailer {
 		if ( ! $b || ! is_email( $b['customer_email'] ) ) {
 			return;
 		}
-		$stops = json_decode( (string) $b['stops'], true );
-		$ret   = 'return' === ( $b['leg'] ?? '' );
-		$leg   = $ret ? 'Return' : ( 'outbound' === ( $b['leg'] ?? '' ) ? 'Way out' : '' );
+		$legs = array( $b );
+		$pair = Bookings::pair_of( $b );
+		if ( $pair ) {
+			// One trip, one email: the first change tells the customer about both journeys, and the second
+			// leg's change to the same status within ten minutes is not mailed again.
+			$key = 'sb_st_' . md5( implode( '|', array( min( $b['reference'], $pair['reference'] ), max( $b['reference'], $pair['reference'] ), $status ) ) );
+			if ( get_transient( $key ) ) {
+				return;
+			}
+			set_transient( $key, 1, 10 * MINUTE_IN_SECONDS );
+			$legs = 'return' === ( $b['leg'] ?? '' ) ? array( $pair, $b ) : array( $b, $pair );
+		}
+		$refs     = array();
+		$journeys = array();
+		foreach ( $legs as $row ) {
+			$is_ret     = 'return' === ( $row['leg'] ?? '' );
+			$label      = $pair ? ( $is_ret ? 'Return' : 'Way out' ) : '';
+			$stops      = is_array( $row['stops'] ) ? $row['stops'] : json_decode( (string) $row['stops'], true );
+			$state      = $pair ? ( Bookings::STATUSES[ $row['status'] ] ?? $row['status'] ) : '';
+			$refs[]     = array( 'label' => $label ?: 'Reference', 'kind' => $is_ret ? 'ret' : 'out', 'reference' => (string) $row['reference'] );
+			$journeys[] = array( 'label' => $label, 'kind' => $is_ret ? 'ret' : 'out', 'when' => self::when( $row['pickup_at'] ), 'stops' => self::labels( $stops ), 'note' => $state ? 'Status: ' . $state : '' );
+		}
 		self::send_template(
 			(string) $b['customer_email'],
-			$messages[ $status ][0] . ' ' . $b['reference'],
+			$messages[ $status ][0] . ' ' . implode( ' and ', array_column( $refs, 'reference' ) ),
 			array(
 				'preheader' => $messages[ $status ][2],
 				'heading'   => $messages[ $status ][1],
 				'intro'     => $messages[ $status ][2],
-				'refs'      => array( array( 'label' => $leg ?: 'Reference', 'kind' => $ret ? 'ret' : 'out', 'reference' => (string) $b['reference'] ) ),
-				'journeys'  => array( array( 'label' => $leg, 'kind' => $ret ? 'ret' : 'out', 'when' => self::when( $b['pickup_at'] ), 'stops' => self::labels( $stops ), 'note' => '' ) ),
+				'refs'      => $refs,
+				'journeys'  => $journeys,
 			),
 			array(),
 			'status'
+		);
+	}
+
+	/** The "confirm your email address" message sent when a customer account is made. */
+	public static function verification( string $to, string $name, string $url ): bool {
+		$first = trim( (string) strtok( $name, ' ' ) );
+		return self::send_template(
+			$to,
+			'Confirm your email address',
+			array(
+				'preheader' => 'One tap to confirm your email and finish setting up your account.',
+				'heading'   => 'Confirm your email address',
+				'intro'     => ( '' !== $first ? 'Hi ' . $first . ', thanks' : 'Thanks' ) . ' for creating an account. Please confirm this is your email address so we can keep your bookings safe.',
+				'buttons'   => array( array( 'label' => 'Confirm my email', 'url' => $url, 'style' => 'primary' ) ),
+				'notes'     => array(
+					'This link works for 3 days and can be used once.',
+					'If the button does not work, copy this link into your browser: ' . $url,
+					'Did not create an account? You can ignore this email and nothing will happen.',
+				),
+			),
+			array(),
+			'account'
 		);
 	}
 

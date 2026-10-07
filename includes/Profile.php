@@ -34,6 +34,32 @@ final class Profile {
 		foreach ( $routes as $r ) {
 			register_rest_route( Rest::NS, $r[0], array( 'methods' => \WP_REST_Server::CREATABLE, 'callback' => array( self::class, $r[1] ), 'permission_callback' => $r[2] ) );
 		}
+		// The link in the verification email. A browser opens it, so it is a GET that ends in a redirect.
+		register_rest_route( Rest::NS, '/account/verify', array( 'methods' => \WP_REST_Server::READABLE, 'callback' => array( self::class, 'verify_email' ), 'permission_callback' => '__return_true' ) );
+	}
+
+	/** A small banner after the customer taps the link in the verification email. */
+	public static function verified_notice(): void {
+		$r = isset( $_GET['sb_verified'] ) ? sanitize_key( wp_unslash( $_GET['sb_verified'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification -- display only.
+		$m = array(
+			'ok'      => array( '#0a7a3d', __( 'Thank you, your email address is confirmed.', 'sprint-booking' ) ),
+			'expired' => array( '#b45309', __( 'That confirmation link has expired. Sign in and ask for a new one.', 'sprint-booking' ) ),
+			'invalid' => array( '#b91c1c', __( 'That confirmation link is not valid. It may already have been used.', 'sprint-booking' ) ),
+		);
+		if ( ! isset( $m[ $r ] ) ) {
+			return;
+		}
+		printf( '<div role="status" style="position:fixed;left:50%%;bottom:24px;transform:translateX(-50%%);z-index:99999;max-width:calc(100%% - 32px);padding:12px 18px;border-radius:8px;background:%1$s;color:#fff;font:600 15px/1.4 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25)">%2$s</div>', esc_attr( $m[ $r ][0] ), esc_html( $m[ $r ][1] ) );
+	}
+
+	public static function verify_email( \WP_REST_Request $req ) {
+		if ( ! RateLimit::allow( 'verify', 20, 15 * MINUTE_IN_SECONDS ) ) {
+			$result = 'invalid';
+		} else {
+			$result = Accounts::verify( absint( $req->get_param( 'uid' ) ), (string) $req->get_param( 'token' ) );
+		}
+		wp_safe_redirect( add_query_arg( 'sb_verified', $result, home_url( '/' ) ) );
+		exit;
 	}
 
 	// ── Page ──────────────────────────────────────────────────────

@@ -157,7 +157,7 @@ final class EmailTemplate {
 			$h   .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 10px;"><tr><td style="border-radius:8px;' . $fill . '"><a href="' . $u . '" style="display:inline-block;padding:12px 26px;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;' . $fill . $font . '">' . self::e( $b['label'] ) . '</a></td></tr></table>';
 		}
 		foreach ( $o['notes'] ?? array() as $n ) {
-			$h .= '<p style="margin:0 0 12px;font-size:13px;line-height:1.55;color:' . self::SLATE . ';">' . self::e( $n ) . '</p>';
+			$h .= '<p style="margin:0 0 12px;font-size:13px;line-height:1.55;color:' . self::SLATE . ';word-break:break-word;overflow-wrap:anywhere;">' . self::e( $n ) . '</p>';
 		}
 		$h .= '</td></tr>';
 

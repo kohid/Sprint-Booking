@@ -33,6 +33,7 @@ final class Settings {
 			'max_vias'                => 5,
 			'min_lead_minutes'        => 60,
 			'notify_email'            => '',
+			'notify_office'           => false,
 			'email_logo_id'           => 0,
 			'email_footer'            => '',
 			'routing_base_url'        => 'https://router.project-osrm.org',
@@ -122,6 +123,7 @@ final class Settings {
 		$out['max_vias']                = max( 1, min( self::MAX_VIAS_LIMIT, (int) ( $in['max_vias'] ?? 5 ) ) );
 		$out['min_lead_minutes']        = max( 0, min( 10080, (int) ( $in['min_lead_minutes'] ?? 60 ) ) );
 
+		$out['notify_office']    = ! empty( $in['notify_office'] );
 		$email                   = sanitize_email( (string) ( $in['notify_email'] ?? '' ) );
 		$out['notify_email']     = is_email( $email ) ? $email : '';
 		$logo_id                 = absint( $in['email_logo_id'] ?? 0 );

@@ -40,6 +40,7 @@ final class Plugin {
 		add_action( 'sb_booking_status_changed', array( WhatsApp::class, 'status_changed' ), 10, 2 );
 		add_action( 'sb_booking_updated', array( WhatsApp::class, 'booking_updated' ), 10, 2 );
 		add_action( 'sb_payment_received', array( WhatsApp::class, 'payment_received' ), 10, 2 );
+		add_action( 'wp_footer', array( Profile::class, 'verified_notice' ) );
 		Updater::init(); // Not admin-only: WordPress cron runs the update check too.
 
 		if ( is_admin() ) {

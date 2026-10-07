@@ -65,7 +65,36 @@ final class Accounts {
 			return new \WP_Error( 'sb_register', __( 'We could not create your account. Please book as a guest.', 'sprint-booking' ), array( 'status' => 500 ) );
 		}
 		update_user_meta( (int) $id, self::META_PHONE, $phone );
+		self::send_verification( (int) $id );
 		return (int) $id;
+	}
+
+	public const META_HASH     = 'sb_verify_hash';
+	public const META_EXPIRES  = 'sb_verify_exp';
+	public const META_VERIFIED = 'sb_email_verified';
+
+	/** Email a one-time link that confirms the address. Never blocks sign-up if mail fails. */
+	public static function send_verification( int $user_id ): bool {
+		$u = get_userdata( $user_id );
+		if ( ! $u || ! is_email( $u->user_email ) || get_user_meta( $user_id, self::META_VERIFIED, true ) ) {
+			return false;
+		}
+		$token = EmailVerify::new_token();
+		update_user_meta( $user_id, self::META_HASH, EmailVerify::hash( $token ) );
+		update_user_meta( $user_id, self::META_EXPIRES, time() + EmailVerify::TTL );
+		$url = add_query_arg( array( 'uid' => $user_id, 'token' => $token ), rest_url( Rest::NS . '/account/verify' ) );
+		return Mailer::verification( (string) $u->user_email, (string) $u->display_name, $url );
+	}
+
+	/** @return string 'ok' | 'expired' | 'invalid' */
+	public static function verify( int $user_id, string $token ): string {
+		$result = EmailVerify::check( (string) get_user_meta( $user_id, self::META_HASH, true ), (int) get_user_meta( $user_id, self::META_EXPIRES, true ), $token, time() );
+		if ( 'ok' === $result ) {
+			update_user_meta( $user_id, self::META_VERIFIED, time() );
+			delete_user_meta( $user_id, self::META_HASH );
+			delete_user_meta( $user_id, self::META_EXPIRES );
+		}
+		return $result;
 	}
 
 	/**

@@ -1,8 +1,8 @@
 <?php
 /** Branded HTML emails: layout, escaping, logo fallbacks, return journeys and the text twin. Run: php tests/email-template-test.php */
-namespace SprintBooking { class Rest { const VULNERABLE_TYPES = array( 'child' => 'Child' ); } class Roles { public static function clean( $a, $b ) { return array( "sb_dispatcher" ); } } class Bookings { public static function find( $id ) { return $GLOBALS['row'] ?? null; } } }
+namespace SprintBooking { class Rest { const VULNERABLE_TYPES = array( 'child' => 'Child' ); } class Roles { public static function clean( $a, $b ) { return array( "sb_dispatcher" ); } } class Bookings { const STATUSES = array( 'pending' => 'Received', 'confirmed' => 'Confirmed' ); public static function find( $id ) { return $GLOBALS['row'] ?? null; } public static function pair_of( $b ) { return $GLOBALS['pair'] ?? null; } } }
 namespace {
-	define( 'ABSPATH', '/x/' );
+	define( 'ABSPATH', '/x/' ); define( 'MINUTE_IN_SECONDS', 60 );
 	function __( $s ) { return $s; } function wp_roles() { return new class { public function get_names() { return array( 'administrator' => 'Administrator' ); } }; }
 	function sanitize_text_field( $s ) { return trim( strip_tags( (string) $s ) ); } function sanitize_textarea_field( $s ) { return trim( strip_tags( (string) $s ) ); }
 	function sanitize_email( $s ) { return (string) $s; } function is_email( $s ) { return str_contains( (string) $s, '@' ); }
@@ -14,9 +14,10 @@ namespace {
 	function get_theme_mod( $k ) { return $GLOBALS['theme_logo'] ?? 0; } function get_post_mime_type( $id ) { return $GLOBALS['mime'][ $id ] ?? 'image/png'; }
 	function wp_get_attachment_image_url( $id ) { return 'https://inverness.test/logo-' . $id . '.png'; } function get_site_icon_url() { return $GLOBALS['icon'] ?? ''; }
 	function add_action( $h, $f ) { $GLOBALS['hooks'][ $h ] = $f; } function remove_action( $h, $f ) { unset( $GLOBALS['hooks'][ $h ] ); }
+	function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; } function set_transient( $k, $v, $t ) { $GLOBALS['tr'][ $k ] = $v; }
 	function wp_mail( $to, $subj, $body, $headers ) { $GLOBALS['sent'][] = compact( 'to', 'subj', 'body', 'headers' ); if ( isset( $GLOBALS['hooks']['phpmailer_init'] ) ) { $m = new stdClass(); $GLOBALS['hooks']['phpmailer_init']( $m ); $GLOBALS['sent'][ count( $GLOBALS['sent'] ) - 1 ]['alt'] = $m->AltBody ?? ''; } return true; }
 	$GLOBALS['opts'] = array(); $GLOBALS['sent'] = array();
-	foreach ( array( 'WhatsAppRules', 'Settings', 'Pricing', 'PaymentRules', 'EmailTemplate', 'Mailer' ) as $f ) { require __DIR__ . "/../includes/$f.php"; }
+	foreach ( array( 'WhatsAppRules', 'Settings', 'Pricing', 'PaymentRules', 'EmailTemplate', 'EmailVerify', 'Mailer' ) as $f ) { require __DIR__ . "/../includes/$f.php"; }
 	class WP_Error {}
 	use SprintBooking\EmailTemplate; use SprintBooking\Mailer; use SprintBooking\Settings;
 
@@ -58,6 +59,9 @@ namespace {
 	$mk = function ( $ref, $at, $stops, $leg, $price ) { return array( 'reference' => $ref, 'status' => 'pending', 'pickup_at' => $at, 'stops' => array_map( fn( $l ) => array( 'label' => $l ), $stops ), 'service' => 'local', 'airport_direction' => '', 'distance_m' => 16093, 'route_estimated' => 0, 'passengers' => 2, 'luggage' => 1, 'carry_on' => 0, 'vehicle' => 'saloon', 'price_pence' => $price, 'payment_method' => 'driver', 'source' => 'web', 'customer_title' => 'Ms', 'customer_name' => 'Jo <Bloggs>', 'customer_phone' => '0777', 'customer_email' => 'jo@example.com', 'vulnerable_type' => '', 'flight_no' => '', 'company' => '', 'notes' => '', 'leg' => $leg, 'pay_links' => array( 'stripe' => 'https://pay.test/s', 'paypal' => 'https://pay.test/p' ) ); };
 	$out = $mk( 'SB-OUT11', '2027-01-01 09:00:00', array( 'Airport', 'Castle' ), 'outbound', 1500 ); $ret = $mk( 'SB-RET22', '2027-01-03 17:30:00', array( 'Castle', 'Airport' ), 'return', 1400 );
 	$GLOBALS['sent'] = array(); Mailer::booking_created( $out, $ret );
+	t( 'by default a return sends the customer ONE email and no office copy', 1 === count( $GLOBALS['sent'] ) && 'jo@example.com' === $GLOBALS['sent'][0]['to'] && str_contains( $GLOBALS['sent'][0]['body'], 'SB-RET22' ) );
+	update_option( Settings::OPTION, array_merge( Settings::defaults(), array( 'email_logo_id' => 7, 'notify_office' => true ) ) );
+	$GLOBALS['sent'] = array(); Mailer::booking_created( $out, $ret );
 	t( 'two emails go out, both HTML with a text alternative', 2 === count( $GLOBALS['sent'] ) && in_array( 'Content-Type: text/html; charset=UTF-8', $GLOBALS['sent'][1]['headers'], true ) && str_contains( $GLOBALS['sent'][1]['alt'], 'Return reference: SB-RET22' ) );
 	$c = $GLOBALS['sent'][1]; $o = $GLOBALS['sent'][0];
 	t( 'customer subject names both references', 'We received your booking SB-OUT11 and SB-RET22' === $c['subj'] );
@@ -74,10 +78,24 @@ namespace {
 	// Status, payment, update, test
 	$GLOBALS['row'] = array_merge( $ret, array( 'stops' => json_encode( array( array( 'label' => 'Castle' ), array( 'label' => 'Airport' ) ) ), 'payment_status' => 'unpaid' ) );
 	$GLOBALS['sent'] = array(); Mailer::status_changed( 3, 'confirmed' );
-	t( 'status email is branded and labelled Return', 1 === count( $GLOBALS['sent'] ) && str_contains( $GLOBALS['sent'][0]['body'], 'Your booking is confirmed' ) && str_contains( $GLOBALS['sent'][0]['body'], 'SB-RET22' ) && str_contains( $GLOBALS['sent'][0]['body'], '>Return<' ) );
+	t( 'a one-way status email is branded', 1 === count( $GLOBALS['sent'] ) && str_contains( $GLOBALS['sent'][0]['body'], 'Your booking is confirmed' ) && str_contains( $GLOBALS['sent'][0]['body'], 'SB-RET22' ) );
+	$GLOBALS['row'] = array_merge( $out, array( 'stops' => json_encode( array( array( 'label' => 'Airport' ), array( 'label' => 'Castle' ) ) ), 'status' => 'confirmed', 'payment_status' => 'unpaid' ) );
+	$GLOBALS['pair'] = array_merge( $ret, array( 'stops' => json_encode( array( array( 'label' => 'Castle' ), array( 'label' => 'Airport' ) ) ), 'status' => 'pending' ) );
+	$GLOBALS['sent'] = array(); Mailer::status_changed( 3, 'confirmed' );
+	t( 'a return trip gets ONE status email covering both journeys, each with its own status', 1 === count( $GLOBALS['sent'] ) && str_contains( $GLOBALS['sent'][0]['body'], 'SB-OUT11' ) && str_contains( $GLOBALS['sent'][0]['body'], 'SB-RET22' ) && str_contains( $GLOBALS['sent'][0]['body'], 'Status: Confirmed' ) && str_contains( $GLOBALS['sent'][0]['body'], 'Status: Received' ) );
+	$GLOBALS['row'] = $GLOBALS['pair']; $GLOBALS['row']['status'] = 'confirmed'; $GLOBALS['pair'] = array_merge( $out, array( 'stops' => json_encode( array() ), 'status' => 'confirmed' ) );
+	$GLOBALS['sent'] = array(); Mailer::status_changed( 4, 'confirmed' );
+	t( 'confirming the other leg straight after sends nothing more', 0 === count( $GLOBALS['sent'] ) );
+	unset( $GLOBALS['pair'] );
+	// Email verification
+	t( 'verify: a token checks out once hashed, and bad or old ones are refused', ( function () { $tok = SprintBooking\EmailVerify::new_token(); $h = SprintBooking\EmailVerify::hash( $tok ); $v = SprintBooking\EmailVerify::class; return 40 === strlen( $tok ) && 'ok' === $v::check( $h, 2000, $tok, 1000 ) && 'expired' === $v::check( $h, 900, $tok, 1000 ) && 'invalid' === $v::check( $h, 2000, str_repeat( 'a', 40 ), 1000 ) && 'invalid' === $v::check( '', 2000, $tok, 1000 ) && 'invalid' === $v::check( $h, 2000, 'x<script>', 1000 ) && $h !== $tok; } )() );
+	$GLOBALS['sent'] = array(); $ok = Mailer::verification( 'jo@example.com', 'Jo <Bloggs>', 'https://inverness.test/wp-json/sprint-booking/v1/account/verify?uid=5&token=abc123' );
+	$v = $GLOBALS['sent'][0] ?? array();
+	t( 'verification email: branded, one button to the link, escaped name, 3-day note, text twin', $ok && 'Confirm your email address' === $v['subj'] && str_contains( $v['body'], 'logo-7.png' ) && str_contains( $v['body'], 'Confirm my email' ) && str_contains( $v['body'], 'href="https://inverness.test/wp-json/sprint-booking/v1/account/verify?uid=5&amp;token=abc123"' ) && str_contains( $v['body'], 'Hi Jo,' ) && ! str_contains( $v['body'], '<Bloggs>' ) && str_contains( $v['body'], '3 days' ) && str_contains( $v['alt'], 'Confirm my email: https://inverness.test/wp-json/sprint-booking/v1/account/verify?uid=5&token=abc123' ) );
+	t( 'office copy setting: off by default, kept when ticked', false === Settings::defaults()['notify_office'] && true === Settings::sanitize( array( 'notify_office' => '1' ) )['notify_office'] && false === Settings::sanitize( array() )['notify_office'] );
 	$GLOBALS['sent'] = array(); Mailer::payment_received( array( 'reference' => 'SB-OUT11', 'customer_email' => 'jo@example.com', 'payment_method' => 'stripe', 'payment_ref' => 'pi_1', 'paid_pence' => 2900 ), 2900, array( 'SB-OUT11', 'SB-RET22' ) );
 	t( 'payment receipt lists both journeys and the total; the office note stays plain', str_contains( $GLOBALS['sent'][0]['body'], 'SB-RET22' ) && str_contains( $GLOBALS['sent'][0]['body'], '£29.00' ) && ! str_contains( $GLOBALS['sent'][1]['body'], '<html' ) );
-	$GLOBALS['sent'] = array(); Mailer::booking_updated( $GLOBALS['row'], array( 'Pickup time: 17:30 to 18:00' ) );
+	$GLOBALS['sent'] = array(); Mailer::booking_updated( $GLOBALS['row'] + array( 'payment_status' => 'unpaid' ), array( 'Pickup time: 17:30 to 18:00' ) );
 	t( 'update email shows what changed', str_contains( $GLOBALS['sent'][0]['body'], 'Pickup time: 17:30 to 18:00' ) && str_contains( $GLOBALS['sent'][0]['body'], 'Your booking was updated' ) );
 	$GLOBALS['sent'] = array(); Mailer::test_email( 'a@b.co' );
 	t( 'test email previews the two-journey look', str_contains( $GLOBALS['sent'][0]['body'], 'SB-SAMPLE2' ) && str_contains( $GLOBALS['sent'][0]['body'], 'logo-7.png' ) );
@@ -85,8 +103,9 @@ namespace {
 	t( 'plain send is unchanged', array() === $GLOBALS['sent'][0]['headers'] && ! isset( $GLOBALS['hooks']['phpmailer_init'] ) );
 
 	if ( getenv( 'SB_EMAIL_OUT' ) ) { // For tests/e2e/email-e2e.js: write real renders to look at in a browser.
-		$GLOBALS['sent'] = array(); Mailer::booking_created( $out, $ret ); file_put_contents( getenv( 'SB_EMAIL_OUT' ) . '/return.html', $GLOBALS['sent'][1]['body'] );
-		$GLOBALS['sent'] = array(); Mailer::booking_created( $out ); file_put_contents( getenv( 'SB_EMAIL_OUT' ) . '/oneway.html', $GLOBALS['sent'][1]['body'] );
+		$GLOBALS['sent'] = array(); Mailer::booking_created( $out, $ret ); file_put_contents( getenv( 'SB_EMAIL_OUT' ) . '/return.html', end( $GLOBALS['sent'] )['body'] );
+		$GLOBALS['sent'] = array(); Mailer::booking_created( $out ); file_put_contents( getenv( 'SB_EMAIL_OUT' ) . '/oneway.html', end( $GLOBALS['sent'] )['body'] );
+		$GLOBALS['sent'] = array(); Mailer::verification( 'jo@example.com', 'Jo Bloggs', 'https://inverness.test/wp-json/sprint-booking/v1/account/verify?uid=5&token=0123456789abcdef0123456789abcdef01234567' ); file_put_contents( getenv( 'SB_EMAIL_OUT' ) . '/verify.html', $GLOBALS['sent'][0]['body'] );
 	}
 	echo $fail ? "\n$fail FAILED\n" : "\nemail ok\n";
 	exit( $fail ? 1 : 0 );

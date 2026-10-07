@@ -22,6 +22,11 @@ function assert(c, m) { if (!c) { console.error('FAIL: ' + m); process.exitCode 
     await p.screenshot({ path: path.join(dir, 'return-' + name + '.png'), fullPage: true });
     await p.setContent(fs.readFileSync(path.join(dir, 'oneway.html'), 'utf8'));
     assert(await p.locator('.sbm-ref').count() === 1, name + ': one-way has one reference');
+    await p.setContent(fs.readFileSync(path.join(dir, 'verify.html'), 'utf8'));
+    const vb = await p.locator('a:has-text("Confirm my email")');
+    assert(await vb.count() === 1 && /account\/verify\?uid=5&token=/.test(await vb.getAttribute('href')), name + ': verification email has the confirm button');
+    assert(await p.evaluate(() => document.documentElement.scrollWidth) <= vp.width, name + ': verification email has no sideways scroll (long link wraps)');
+    await p.screenshot({ path: path.join(dir, 'verify-' + name + '.png'), fullPage: true });
     await ctx.close();
   }
   await b.close();
