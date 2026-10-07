@@ -349,6 +349,15 @@ async function pickFirst(page, stopSel) { await page.click(`${stopSel} >> .sb-re
   await page.click('[data-sb-submit]'); await page.waitForSelector('.sb-done:not([hidden])');
   assert(/SB-TEST42/.test(await page.textContent('.sb-done')) && /account is ready/.test(await page.textContent('.sb-done')), 'confirmation with account message');
   assert(/SB-TEST43/.test(await page.textContent('.sb-done')) && /Way out/.test(await page.textContent('.sb-done')) && /each journey/.test(await page.textContent('.sb-done')), 'a return shows two references');
+  { // Done screen: each journey is a centred column, label above its reference box, stacking on a phone.
+    const cols = await page.locator('.sb-done .sb-refs-col').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(), t = e.querySelector('.sb-refs-tag').getBoundingClientRect(), x = e.querySelector('.sb-ref').getBoundingClientRect(); return { top: r.top, left: r.left, tagAbove: t.bottom <= x.top + 1, tagCentre: Math.abs((t.left + t.right) / 2 - (x.left + x.right) / 2) < 2, inside: x.left >= r.left - 1 && x.right <= r.right + 1 }; }));
+    assert(cols.length === 2 && cols.every(c => c.tagAbove && c.tagCentre && c.inside), 'return references: label centred above each box, box inside its column');
+    assert(Math.abs(cols[0].top - cols[1].top) < 2 && cols[1].left > cols[0].left, 'return references: two columns side by side');
+    const vs = page.viewportSize(); await page.setViewportSize({ width: 360, height: 800 });
+    const st = await page.locator('.sb-done .sb-refs-col').evaluateAll(els => els.map(e => e.getBoundingClientRect()));
+    assert(st[1].top > st[0].top + 20 && Math.abs(st[0].left - st[1].left) < 2 && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'return references stack on a phone with no sideways scroll');
+    await page.setViewportSize(vs);
+  }
   const b = log.posted[0];
   assert.strictEqual(b.first_name, 'Test'); assert.strictEqual(b.last_name, 'Person'); assert.strictEqual(b.name, 'Test Person', 'first and last name are joined for the server');
   assert.strictEqual(b.return_same, true); assert.deepStrictEqual(b.return_stops, []);

@@ -79,6 +79,8 @@ The dashboard shortcodes show a sign-in form to visitors and a "No access" notic
 
 ## The booking form
 
+**Branded emails (v0.16).** Every customer email (booking received, confirmed, driver assigned, cancelled, updated, payment receipt, and the Settings test) is now a designed HTML email with a plain-text twin for text-only mail apps. The logo comes from Settings, Email design, Email logo (a PNG or JPG; mail apps cannot show SVG). If none is chosen it uses the site logo, then the site icon, then your site name as a wordmark. An optional footer line sits under every email. A return booking shows one dashed box per journey (Way out in red, Return in blue, side by side, stacked on a phone), a card for each journey with its own date, time and route, the fare split and the total, and the Pay buttons. The office copy has the same layout plus the customer's details and a Reply-To to the customer. Use Settings, Email, Send test to see the two-journey look. On the booking form's done screen the two references are now centred columns with the label above each box.
+
 **Settings in the dashboard menu (v0.15).** Administrators see a third item, **Settings**, under Overview and Bookings in the dashboard's side menu (not in the account dropdown). On that page the Shortcodes tab is left out, since making pages and copying shortcodes is wp-admin work; the logo and site name at the top of the side menu link to the home page. It opens `[sprint_dashboard_settings]`: the whole Settings screen (fares, rules, cars, services, payments, phone agent, WhatsApp, email, shortcodes, demo) inside the same dashboard, saved with the same checks as wp-admin's. Create the page from Settings → Shortcodes ("Create the dashboard pages" now makes Overview, Bookings and Settings); until it exists the menu item opens the wp-admin Settings screen. Dispatch staff never see the item, and the page tells anyone else it is for administrators. The Test chat and the wp-admin screens are unchanged.
 
 **Return journeys on the map (v0.14).** Once "I also need a return journey" is ticked, a Way out / Return switch appears above the map and follows the Journey / Return journey tabs. The Return view shows the way back in blue with its own pins, distance, time and via stops (the same route reversed, or the return's own route if its stops differ), and keeps the way out as a faint dashed line so a different via stop is easy to see. The fare panel shows the split between the two bookings, and the Passenger details summary starts with a "Trip" line (One way, or Return with two references) so a forgotten tick is easy to spot. Bookings that still hold both journeys in one row (made before v0.10) are badged "Return included" on the Bookings page.
@@ -146,11 +148,12 @@ php tests/settings-whatsapp-test.php  # WhatsApp settings: cleaning, kept keys
 php tests/user-menu-test.php          # account dropdown items, profile/sign-up validation
 php tests/profile-api-test.php        # My Profile / sign-up / sign-in handlers
 php tests/create-return-test.php      # a return booking becomes two bookings and two references
+php tests/email-template-test.php    # branded emails: layout, escaping, logo fallbacks, return journeys
 php tests/demo-test.php               # demo data plan
 # dashboard-test.php also covers cancel/change rules and the daily report
 ```
 
-Browser tests of the form (`e2e.js`), dashboard (`dashboard-e2e.js`), chat (`chat-e2e.js`), demo the WhatsApp settings (`whatsapp-admin-e2e.js`), and the user menu and My Profile (`menu-e2e.js`) are in `tests/e2e/` (see its README).
+Browser tests of the form (`e2e.js`), dashboard (`dashboard-e2e.js`), chat (`chat-e2e.js`), demo the WhatsApp settings (`whatsapp-admin-e2e.js`), the user menu and My Profile (`menu-e2e.js`), and the rendered emails on desktop and phone (`email-e2e.js`, after `SB_EMAIL_OUT=/tmp/sb-email php tests/email-template-test.php`) are in `tests/e2e/` (see its README).
 
 ## Structure
 

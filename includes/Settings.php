@@ -33,6 +33,8 @@ final class Settings {
 			'max_vias'                => 5,
 			'min_lead_minutes'        => 60,
 			'notify_email'            => '',
+			'email_logo_id'           => 0,
+			'email_footer'            => '',
 			'routing_base_url'        => 'https://router.project-osrm.org',
 			'geocoder_url'            => 'https://photon.komoot.io/api',
 			'allow_accounts'          => true,
@@ -122,6 +124,9 @@ final class Settings {
 
 		$email                   = sanitize_email( (string) ( $in['notify_email'] ?? '' ) );
 		$out['notify_email']     = is_email( $email ) ? $email : '';
+		$logo_id                 = absint( $in['email_logo_id'] ?? 0 );
+		$out['email_logo_id']    = ( $logo_id && function_exists( 'wp_attachment_is_image' ) && wp_attachment_is_image( $logo_id ) ) ? $logo_id : 0;
+		$out['email_footer']     = mb_substr( sanitize_textarea_field( (string) ( $in['email_footer'] ?? '' ) ), 0, 300 );
 		$base                    = esc_url_raw( (string) ( $in['routing_base_url'] ?? $d['routing_base_url'] ), array( 'https' ) );
 		$out['routing_base_url'] = $base ? untrailingslashit( $base ) : $d['routing_base_url'];
 

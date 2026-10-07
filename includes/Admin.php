@@ -293,7 +293,7 @@ final class Admin {
 			wp_safe_redirect( self::back( 'email', array( 'sb_mail' => 'invalid' ) ) );
 			exit;
 		}
-		$ok = Mailer::send( $to, __( 'Sprint Booking test email', 'sprint-booking' ), __( 'If you can read this, booking emails can leave your site. Check the log in Settings, Email, for any failures.', 'sprint-booking' ), array(), 'test' );
+		$ok = Mailer::test_email( $to );
 		wp_safe_redirect( self::back( 'email', array( 'sb_mail' => $ok ? 'sent' : 'failed' ) ) );
 		exit;
 	}
@@ -502,6 +502,27 @@ final class Admin {
 		$panel_close();
 
 		WhatsAppAdmin::form_panel( $c, $name, $row, $panel_open, $panel_close );
+
+		$panel_open( 'email', __( 'Email design', 'sprint-booking' ), __( 'Booking emails are branded with your logo. Without one chosen here, the site logo, then the site icon, then your site name is used.', 'sprint-booking' ) );
+		$logo_id  = (int) ( $c['email_logo_id'] ?? 0 );
+		$logo_url = $logo_id ? (string) wp_get_attachment_image_url( $logo_id, 'medium' ) : '';
+		$row(
+			'sb-email-logo',
+			__( 'Email logo', 'sprint-booking' ),
+			sprintf(
+				'<div class="sb-ui-photo" data-sb-photo><img src="%1$s" alt="" style="display:%2$s;max-height:64px;width:auto"><input type="hidden" name="%3$s[email_logo_id]" value="%4$d"><button type="button" class="sb-d-btn sb-d-btn--light" data-sb-pick>%5$s</button> <button type="button" class="button-link" data-sb-clear%6$s>%7$s</button></div>',
+				esc_url( $logo_url ),
+				$logo_url ? 'block' : 'none',
+				esc_attr( $name ),
+				$logo_id,
+				esc_html__( 'Choose logo', 'sprint-booking' ),
+				$logo_id ? '' : ' hidden',
+				esc_html__( 'Remove', 'sprint-booking' )
+			),
+			__( 'Use a PNG or JPG, about 400 px wide. Email apps cannot show SVG logos.', 'sprint-booking' )
+		);
+		$row( 'sb-email-footer', __( 'Email footer', 'sprint-booking' ), '<textarea id="sb-email-footer" class="sb-ui-input" rows="3" maxlength="300" name="' . esc_attr( $name ) . '[email_footer]">' . esc_textarea( (string) ( $c['email_footer'] ?? '' ) ) . '</textarea>', __( 'Optional: address, phone number or a line of thanks, shown under every email.', 'sprint-booking' ) );
+		$panel_close();
 
 		echo '<div class="sb-ui-savebar" data-sb-savebar><button type="submit" class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Save changes', 'sprint-booking' ) . '</button></div>';
 		echo '</form>';

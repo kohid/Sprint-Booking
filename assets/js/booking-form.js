@@ -1275,8 +1275,8 @@
 		if ( res.return_reference ) {
 			done.appendChild( el( 'p', { text: 'Your references, one for each journey' } ) );
 			done.appendChild( el( 'div', { 'class': 'sb-refs' }, [
-				el( 'div', {}, [ el( 'span', { 'class': 'sb-hint', text: 'Way out' } ), el( 'div', { 'class': 'sb-ref', text: res.reference } ) ] ),
-				el( 'div', {}, [ el( 'span', { 'class': 'sb-hint', text: 'Return' } ), el( 'div', { 'class': 'sb-ref', text: res.return_reference } ) ] )
+				el( 'div', { 'class': 'sb-refs-col' }, [ el( 'span', { 'class': 'sb-refs-tag', text: 'Way out' } ), el( 'div', { 'class': 'sb-ref', text: res.reference } ) ] ),
+				el( 'div', { 'class': 'sb-refs-col sb-refs-col--ret' }, [ el( 'span', { 'class': 'sb-refs-tag', text: 'Return' } ), el( 'div', { 'class': 'sb-ref', text: res.return_reference } ) ] )
 			] ) );
 			done.appendChild( el( 'p', { 'class': 'sb-hint', text: 'Use a journey\'s own reference to cancel or change just that journey.' } ) );
 		} else {
