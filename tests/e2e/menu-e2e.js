@@ -43,7 +43,7 @@ const hOver = page => page.evaluate(() => document.documentElement.scrollWidth -
     guest: { items: ['Sign In', 'Sign Up'], name: 'Guest', sub: 'Not signed in' },
     user: { items: ['My Bookings', 'My Profile', 'Log Out'], name: 'Ava Mackenzie', sub: 'ava@example.com' },
     staff: { items: ['Dashboard', 'My Bookings', 'My Profile', 'Log Out'], name: 'Dee Dispatch', sub: 'dee@example.com' },
-    admin: { items: ['Dashboard', 'My Bookings', 'My Profile', 'Settings', 'Log Out'], name: 'kohid', sub: 'kohid.jay@gmail.com' },
+    admin: { items: ['Dashboard', 'My Bookings', 'My Profile', 'Log Out'], name: 'kohid', sub: 'kohid.jay@gmail.com' },
   };
   for (const mode of Object.keys(expect)) {
     const { page, ctx, log } = await open(browser, [mode]);
@@ -63,7 +63,7 @@ const hOver = page => page.evaluate(() => document.documentElement.scrollWidth -
       assert.strictEqual(hrefs['My Profile'], 'https://site.test/my-profile/');
       assert(hrefs['Log Out'].includes('action=logout'));
       if (e.items.includes('Dashboard')) assert.strictEqual(hrefs['Dashboard'], 'https://site.test/dispatch/');
-      if (e.items.includes('Settings')) assert(hrefs['Settings'].includes('page=sb-settings'));
+      assert.strictEqual(hrefs['Settings'], undefined, mode + ': no Settings link in the dropdown');
     }
     const avatar = (await page.textContent('.sb-um__btn .sb-um__avatar')).trim();
     assert.strictEqual(avatar, mode === 'guest' ? '' : { user: 'AM', staff: 'DD', admin: 'K' }[mode], mode + ' avatar: ' + avatar);

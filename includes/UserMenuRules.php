@@ -26,7 +26,7 @@ final class UserMenuRules {
 
 	/**
 	 * @param array{logged_in:bool,staff:bool,admin:bool,urls:array<string,string|null>} $ctx
-	 *        urls: login, signup, profile, bookings, dashboard, settings, logout. A null or empty address means "not available".
+	 *        urls: login, signup, profile, bookings, dashboard, logout. Settings is in the dashboard's own menu, not here. A null or empty address means "not available".
 	 * @return array<int,array{key:string,label:string,url:string}|array{sep:true}> Links in order; a separator is {sep:true}.
 	 */
 	public static function items( array $ctx ): array {
@@ -55,9 +55,6 @@ final class UserMenuRules {
 		}
 		if ( $has( 'profile' ) ) {
 			$add( 'profile', 'My Profile' );
-		}
-		if ( ! empty( $ctx['admin'] ) && $has( 'settings' ) ) {
-			$add( 'settings', 'Settings' );
 		}
 		if ( $has( 'logout' ) ) {
 			$out[] = array( 'sep' => true );

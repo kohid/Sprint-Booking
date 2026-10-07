@@ -13,7 +13,7 @@ const STATUSES = {
   new: { label: 'New', tone: 'warning' }, quote_requested: { label: 'Quote requested', tone: 'info' }, confirmed: { label: 'Confirmed', tone: 'primary' },
   assigned: { label: 'Driver assigned', tone: 'teal' }, completed: { label: 'Completed', tone: 'success' }, cancelled: { label: 'Cancelled', tone: 'muted' },
 };
-const CONFIG = { rest: 'http://dash.test/wp-json/sprint-booking/v1/', nonce: 'n0nce', symbol: '£', site: 'Inverness Taxis', user: { name: 'Dee Dispatch', initials: 'DD' }, logoutUrl: '/logout', statuses: STATUSES, services: { airport: 'Airport Transfer', corporate: 'Corporate Service', golf: 'Golf Transfer', wedding: 'Wedding Cars', minibus: 'Minibus Service', tours: 'Inverness Tours' }, needsAction: ['new', 'quote_requested'], canSettings: true, settingsAdminUrl: 'http://dash.test/wp-admin/settings', vehicles: { saloon: { label: 'Saloon', seats: 4, bags: 2, minibus: false }, mpv: { label: 'MPV', seats: 6, bags: 4, minibus: false }, minibus8: { label: 'Minibus (8 seats)', seats: 8, bags: 8, minibus: true } }, minibusOnly: { airport: false, corporate: false, wedding: false }, titles: ['Mr', 'Mrs', 'Dr'], maxVias: 3 };
+const CONFIG = { rest: 'http://dash.test/wp-json/sprint-booking/v1/', nonce: 'n0nce', symbol: '£', site: 'Inverness Taxis', user: { name: 'Dee Dispatch', initials: 'DD' }, logoutUrl: '/logout', statuses: STATUSES, services: { airport: 'Airport Transfer', corporate: 'Corporate Service', golf: 'Golf Transfer', wedding: 'Wedding Cars', minibus: 'Minibus Service', tours: 'Inverness Tours' }, needsAction: ['new', 'quote_requested'], homeUrl: 'http://dash.test/', canSettings: true, settingsAdminUrl: 'http://dash.test/wp-admin/settings', vehicles: { saloon: { label: 'Saloon', seats: 4, bags: 2, minibus: false }, mpv: { label: 'MPV', seats: 6, bags: 4, minibus: false }, minibus8: { label: 'Minibus (8 seats)', seats: 8, bags: 8, minibus: true } }, minibusOnly: { airport: false, corporate: false, wedding: false }, titles: ['Mr', 'Mrs', 'Dr'], maxVias: 3 };
 
 // ── Fake bookings (relative to now) ──
 const p2 = n => String(n).padStart(2, '0');
@@ -313,6 +313,11 @@ async function findRef(page, ref) {
   await Promise.all([sp.waitForURL('**/settings/'), sp.click('.sb-d-nav__item >> text=Settings')]);
   await sp.waitForSelector('.sb-d-content [data-sb-panel]');
   assert.strictEqual((await sp.textContent('.sb-d-title')).trim(), 'Settings', 'the page title');
+  const brand = sp.locator('a.sb-d-brand');
+  assert.strictEqual(await brand.count(), 1, 'the logo and site name are one link');
+  assert.strictEqual(await brand.getAttribute('href'), 'http://dash.test/', 'it goes to the home page');
+  assert(/Inverness Taxis/.test(await brand.textContent()) && /home page/.test(await brand.getAttribute('aria-label')), 'named for screen readers');
+  assert.strictEqual(await brand.evaluate(a => getComputedStyle(a).textDecorationLine), 'none', 'not underlined until hovered');
   assert(await sp.locator('.sb-d-header .sb-d-btn >> text=Refresh').isHidden(), 'no Refresh button on Settings');
   assert.strictEqual(await sp.getAttribute('.sb-d-nav__item.is-active', 'aria-current'), 'page');
   assert.strictEqual((await sp.textContent('.sb-d-nav__item.is-active')).trim(), 'Settings', 'the menu marks Settings as the open page');

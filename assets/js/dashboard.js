@@ -890,7 +890,7 @@
 				c.setAttribute( 'aria-label', n + ' need action' );
 			};
 			var aside = el( 'aside', { 'class': 'sb-d-aside' }, [
-				el( 'div', { 'class': 'sb-d-brand' }, [ el( 'span', { 'class': 'sb-d-brand__mark', 'aria-hidden': 'true' }, [ icon( 'car' ) ] ), el( 'span', { 'class': 'sb-d-brand__name', text: CFG.site } ) ] ),
+				el( 'a', { 'class': 'sb-d-brand', href: CFG.homeUrl || '/', 'aria-label': CFG.site + ': go to the home page' }, [ el( 'span', { 'class': 'sb-d-brand__mark', 'aria-hidden': 'true' }, [ icon( 'car' ) ] ), el( 'span', { 'class': 'sb-d-brand__name', text: CFG.site } ) ] ),
 				nav,
 				el( 'div', { 'class': 'sb-d-aside__foot' }, [ el( 'div', { 'class': 'sb-d-who' }, [ el( 'span', { 'class': 'sb-d-symbol sb-d-symbol--dark', 'aria-hidden': 'true', text: CFG.user.initials } ), el( 'div', { 'class': 'sb-d-who__text' }, [ el( 'div', { 'class': 'sb-d-aside__name sb-d-clip', text: CFG.user.name } ), el( 'a', { 'class': 'sb-d-aside__link', href: CFG.logoutUrl }, [ icon( 'out' ), 'Sign out' ] ) ] ) ] ) ] )
 			] );

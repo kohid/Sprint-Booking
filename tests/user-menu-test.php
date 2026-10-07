@@ -25,7 +25,7 @@ t( 'a customer sees My Bookings, My Profile and Log Out, set apart by a divider'
 $staff = M::items( array( 'logged_in' => true, 'staff' => true, 'admin' => false, 'urls' => $urls ) );
 t( 'dispatch staff also get Dashboard, first', array( 'Dashboard', 'My Bookings', 'My Profile', '---', 'Log Out' ) === $labels( $staff ) );
 $admin = M::items( array( 'logged_in' => true, 'staff' => true, 'admin' => true, 'urls' => $urls ) );
-t( 'only admins get Settings', array( 'Dashboard', 'My Bookings', 'My Profile', 'Settings', '---', 'Log Out' ) === $labels( $admin ) && ! in_array( 'Settings', $labels( $staff ), true ) );
+t( 'Settings is not in the dropdown for anyone (it lives in the dashboard menu)', array( 'Dashboard', 'My Bookings', 'My Profile', '---', 'Log Out' ) === $labels( $admin ) && ! in_array( 'Settings', array_merge( $labels( $guest ), $labels( $cust ), $labels( $staff ), $labels( $admin ) ), true ) );
 t( 'every user gets My Profile', in_array( 'My Profile', $labels( $cust ), true ) && in_array( 'My Profile', $labels( $staff ), true ) && in_array( 'My Profile', $labels( $admin ), true ) );
 t( 'nothing for a missing address: no Dashboard link when there is no dashboard page, and no dangling divider without Log Out', array( 'My Profile' ) === $labels( M::items( array( 'logged_in' => true, 'staff' => true, 'admin' => false, 'urls' => array( 'profile' => '/p/', 'dashboard' => '' ) ) ) ) );
 t( 'items carry their address and a key', '/my-profile/' === array_values( array_filter( $cust, fn( $i ) => ( $i['key'] ?? '' ) === 'profile' ) )[0]['url'] );

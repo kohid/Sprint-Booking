@@ -397,6 +397,9 @@ final class Admin {
 			'shortcodes' => __( 'Shortcodes', 'sprint-booking' ),
 			'demo'       => __( 'Demo', 'sprint-booking' ),
 		);
+		if ( $front ) {
+			unset( $tabs['shortcodes'] ); // Making pages and copying shortcodes is wp-admin work, not part of the dashboard.
+		}
 		echo '<div class="sb-ui-layout"><div class="sb-ui-tabs" role="tablist" aria-label="' . esc_attr__( 'Settings sections', 'sprint-booking' ) . '">';
 		foreach ( $tabs as $key => $label ) {
 			printf( '<button type="button" role="tab" class="sb-ui-tab" data-sb-tab="%1$s" aria-controls="sb-panel-%1$s" aria-selected="false">%2$s</button>', esc_attr( $key ), esc_html( $label ) );
@@ -510,12 +513,15 @@ final class Admin {
 		WhatsAppAdmin::connection_panel( $panel_open, $panel_close );
 		self::email_panel( $panel_open, $panel_close );
 
-		$panel_open( 'shortcodes', __( 'Shortcodes', 'sprint-booking' ), __( 'Every page of the plugin is a shortcode. In Elementor, add a Shortcode widget and paste one in. Or create a draft page here and open it in Elementor.', 'sprint-booking' ) );
-		self::dashboard_pages_card();
-		foreach ( Catalogue::all() as $sc ) {
-			self::shortcode_card( $sc );
+		if ( ! $front ) {
+			$panel_open( 'shortcodes', __( 'Shortcodes', 'sprint-booking' ), __( 'Every page of the plugin is a shortcode. In Elementor, add a Shortcode widget and paste one in. Or create a draft page here and open it in Elementor.', 'sprint-booking' ) );
+			self::dashboard_pages_card();
+			foreach ( Catalogue::all() as $sc ) {
+				self::shortcode_card( $sc );
+			}
+			$panel_close();
+
 		}
-		$panel_close();
 
 		echo '</div></div></div>';
 	}

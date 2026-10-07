@@ -324,6 +324,7 @@ final class Dashboard {
 				'initials' => strtoupper( mb_substr( $name, 0, 1 ) ) . ( str_contains( $name, ' ' ) ? strtoupper( mb_substr( (string) strrchr( $name, ' ' ), 1, 1 ) ) : '' ),
 			),
 			'logoutUrl' => wp_logout_url( self::current_url() ),
+			'homeUrl'   => home_url( '/' ),
 			'canSettings' => current_user_can( 'manage_options' ),
 			'settingsAdminUrl' => current_user_can( 'manage_options' ) ? admin_url( 'admin.php?page=sb-settings' ) : '',
 			'statuses'  => $statuses,

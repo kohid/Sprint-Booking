@@ -70,7 +70,7 @@ final class Catalogue {
 				'tag'         => UserMenu::TAG,
 				'title'       => __( 'User menu (account dropdown)', 'sprint-booking' ),
 				'audience'    => __( 'Everyone', 'sprint-booking' ),
-				'description' => __( 'The avatar and dropdown for your site header. Visitors who are not signed in see Sign In and Sign Up. Signed-in users see their name and email, then Dashboard (dispatch staff), My Bookings, My Profile, Settings (admins only) and Log Out. Pages are found automatically from the shortcodes on them. Put it in an Elementor header with a Shortcode widget.', 'sprint-booking' ),
+				'description' => __( 'The avatar and dropdown for your site header. Visitors who are not signed in see Sign In and Sign Up. Signed-in users see their name and email, then Dashboard (dispatch staff), My Bookings, My Profile and Log Out. Pages are found automatically from the shortcodes on them. Put it in an Elementor header with a Shortcode widget.', 'sprint-booking' ),
 				'page_title'  => __( 'User menu', 'sprint-booking' ),
 				'attributes'  => array(
 					array(

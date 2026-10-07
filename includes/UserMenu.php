@@ -61,7 +61,6 @@ final class UserMenu {
 					'profile'   => '' !== $a['profile_url'] ? $a['profile_url'] : ( '' !== $profile ? $profile : get_edit_profile_url() ),
 					'bookings'  => '' !== $a['bookings_url'] ? $a['bookings_url'] : Pages::url( MyBookings::TAG ),
 					'dashboard' => $dash,
-					'settings'  => admin_url( 'admin.php?page=sb-settings' ),
 					'logout'    => wp_logout_url( $here ),
 				),
 			)
