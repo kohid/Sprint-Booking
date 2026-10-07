@@ -21,11 +21,39 @@ final class Admin {
 		add_action( 'admin_init', array( self::class, 'register_settings' ) );
 		add_action( 'admin_post_sb_pay_test', array( self::class, 'handle_pay_test' ) );
 		WhatsAppAdmin::init();
+		add_action( 'admin_post_sb_save_settings', array( self::class, 'handle_save_settings' ) );
 		add_action( 'admin_post_sb_voice_secret', array( self::class, 'handle_voice_secret' ) );
 		add_action( 'admin_post_sb_test_email', array( self::class, 'handle_test_email' ) );
 		add_action( 'admin_post_sb_create_dashboard', array( self::class, 'handle_create_dashboard' ) );
 		add_action( 'admin_post_sb_create_page', array( self::class, 'handle_create_page' ) );
 		add_action( 'admin_enqueue_scripts', array( self::class, 'enqueue' ) );
+	}
+
+
+	/** While the settings are drawn on a site page (not wp-admin): where the buttons should come back to. */
+	private static string $return = '';
+
+	/** A nonce field for one of the buttons on Settings, plus the page to return to when it is drawn on the front end. */
+	public static function nonce_field( string $action ): void {
+		wp_nonce_field( $action );
+		if ( '' !== self::$return ) {
+			echo '<input type="hidden" name="sb_return" value="' . esc_url( self::$return ) . '">';
+		}
+	}
+
+	/**
+	 * Where a Settings button sends you afterwards: the site page it was pressed on, if that is one of our own addresses,
+	 * otherwise the Settings screen in wp-admin.
+	 *
+	 * @param array<string,string|int> $args
+	 */
+	public static function back( string $hash = '', array $args = array() ): string {
+		// phpcs:ignore WordPress.Security.NonceVerification -- every caller has checked its nonce already.
+		$posted = isset( $_POST['sb_return'] ) ? esc_url_raw( wp_unslash( $_POST['sb_return'] ) ) : '';
+		$safe   = '' !== $posted ? wp_validate_redirect( $posted, '' ) : '';
+		$base   = '' !== $safe ? remove_query_arg( array( 'sb_mail', 'sb_page', 'sb_dash', 'settings-updated' ), $safe ) : admin_url( 'admin.php?page=sb-settings' );
+		$url    = $args ? add_query_arg( $args, $base ) : $base;
+		return '' !== $hash ? $url . '#' . $hash : $url;
 	}
 
 	public static function menu(): void {
@@ -51,28 +79,37 @@ final class Admin {
 			ChatBooking::enqueue( 'staff' );
 		}
 		if ( false !== strpos( $hook, 'sb-settings' ) ) {
-			wp_enqueue_script( 'sb-demo', SB_URL . 'assets/js/demo.js', array(), $v( 'assets/js/demo.js' ), true );
-			$svc = array();
-			foreach ( Settings::get()['services'] as $key => $sv ) {
-				$svc[] = array( 'key' => $key, 'label' => $sv['label'] );
-			}
-			wp_add_inline_script(
-				'sb-demo',
-				'window.SB_DEMO = ' . wp_json_encode(
-					array(
-						'rest'     => esc_url_raw( rest_url( Rest::NS . '/' ) ),
-						'nonce'    => wp_create_nonce( 'wp_rest' ),
-						'per'      => DemoPlan::PER_SERVICE,
-						'services' => $svc,
-						'counts'   => (object) Demo::counts(),
-					),
-					JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
-				) . ';',
-				'before'
-			);
-			wp_enqueue_media();
-			wp_enqueue_script( 'sb-admin-settings', SB_URL . 'assets/js/admin-settings.js', array( 'jquery' ), $v( 'assets/js/admin-settings.js' ), true );
+			self::enqueue_settings_assets();
 		}
+	}
+
+	/** The scripts the Settings screen needs, in wp-admin or on a site page. */
+	public static function enqueue_settings_assets(): void {
+		$v = static function ( string $rel ): string {
+			$path = SB_DIR . $rel;
+			return is_readable( $path ) ? (string) filemtime( $path ) : SB_VERSION;
+		};
+		wp_enqueue_script( 'sb-demo', SB_URL . 'assets/js/demo.js', array(), $v( 'assets/js/demo.js' ), true );
+		$svc = array();
+		foreach ( Settings::get()['services'] as $key => $sv ) {
+			$svc[] = array( 'key' => $key, 'label' => $sv['label'] );
+		}
+		wp_add_inline_script(
+			'sb-demo',
+			'window.SB_DEMO = ' . wp_json_encode(
+				array(
+					'rest'     => esc_url_raw( rest_url( Rest::NS . '/' ) ),
+					'nonce'    => wp_create_nonce( 'wp_rest' ),
+					'per'      => DemoPlan::PER_SERVICE,
+					'services' => $svc,
+					'counts'   => (object) Demo::counts(),
+				),
+				JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+			) . ';',
+			'before'
+		);
+		wp_enqueue_media();
+		wp_enqueue_script( 'sb-admin-settings', SB_URL . 'assets/js/admin-settings.js', array( 'jquery' ), $v( 'assets/js/admin-settings.js' ), true );
 	}
 
 	public static function register_settings(): void {
@@ -109,6 +146,7 @@ final class Admin {
 			array(
 				'overview-url' => admin_url( 'admin.php?page=sb-dashboard' ),
 				'bookings-url' => admin_url( 'admin.php?page=sb-bookings' ),
+				'settings-url' => current_user_can( self::SETTINGS_CAP ) ? admin_url( 'admin.php?page=sb-settings' ) : '',
 				'full'         => 'admin',
 			)
 		);
@@ -131,7 +169,7 @@ final class Admin {
 			}
 		}
 		if ( ! $found ) {
-			wp_safe_redirect( add_query_arg( 'sb_page', 'fail', admin_url( 'admin.php?page=sb-settings' ) ) );
+			wp_safe_redirect( self::back( 'shortcodes', array( 'sb_page' => 'fail' ) ) );
 			exit;
 		}
 
@@ -146,14 +184,14 @@ final class Admin {
 			true
 		);
 		if ( is_wp_error( $id ) ) {
-			wp_safe_redirect( add_query_arg( 'sb_page', 'fail', admin_url( 'admin.php?page=sb-settings' ) ) );
+			wp_safe_redirect( self::back( 'shortcodes', array( 'sb_page' => 'fail' ) ) );
 			exit;
 		}
-		wp_safe_redirect( add_query_arg( array( 'sb_page' => (int) $id ), admin_url( 'admin.php?page=sb-settings' ) ) );
+		wp_safe_redirect( self::back( 'shortcodes', array( 'sb_page' => (int) $id ) ) );
 		exit;
 	}
 
-	/** Make the two staff pages: Dashboard (overview) and Dashboard > Bookings. */
+	/** Make the staff pages: Dashboard (overview), Dashboard > Bookings and Dashboard > Settings. */
 	public static function handle_create_dashboard(): void {
 		if ( ! current_user_can( self::SETTINGS_CAP ) || ! current_user_can( 'publish_pages' ) ) {
 			wp_die( esc_html__( 'You do not have permission to do that.', 'sprint-booking' ), 403 );
@@ -186,8 +224,22 @@ final class Admin {
 				)
 			);
 		}
+		if ( '' === Pages::url( Dashboard::SETTINGS_TAG ) ) {
+			$parent = url_to_postid( (string) ( $have['overview'] ?? '' ) ) ?: $home;
+			wp_insert_post(
+				array(
+					'post_type'    => 'page',
+					'post_status'  => 'publish',
+					'post_title'   => __( 'Settings', 'sprint-booking' ),
+					'post_name'    => 'settings',
+					'post_parent'  => (int) $parent,
+					'post_content' => '[' . Dashboard::SETTINGS_TAG . ']',
+				)
+			);
+		}
 		Dashboard::forget_pages();
-		wp_safe_redirect( add_query_arg( 'sb_dash', '1', admin_url( 'admin.php?page=sb-settings#shortcodes' ) ) );
+		Pages::forget();
+		wp_safe_redirect( self::back( 'shortcodes', array( 'sb_dash' => '1' ) ) );
 		exit;
 	}
 
@@ -201,7 +253,7 @@ final class Admin {
 		$gateway = isset( $_POST['gateway'] ) && 'paypal' === $_POST['gateway'] ? 'paypal' : 'stripe';
 		$res     = Payments::test_connection( $gateway );
 		set_transient( 'sb_paytest_' . get_current_user_id(), array( 'ok' => ! is_wp_error( $res ), 'gateway' => $gateway, 'message' => is_wp_error( $res ) ? $res->get_error_message() : $res ), 120 );
-		wp_safe_redirect( admin_url( 'admin.php?page=sb-settings#payments' ) );
+		wp_safe_redirect( self::back( 'payments' ) );
 		exit;
 	}
 
@@ -214,7 +266,7 @@ final class Admin {
 		check_admin_referer( 'sb_voice_secret' );
 		// Shown once, on the next screen, to this user only.
 		set_transient( 'sb_voice_secret_' . get_current_user_id(), Voice::new_secret(), 5 * MINUTE_IN_SECONDS );
-		wp_safe_redirect( admin_url( 'admin.php?page=sb-settings#voice' ) );
+		wp_safe_redirect( self::back( 'voice' ) );
 		exit;
 	}
 
@@ -238,11 +290,11 @@ final class Admin {
 
 		$to = isset( $_POST['to'] ) ? sanitize_email( wp_unslash( $_POST['to'] ) ) : '';
 		if ( ! is_email( $to ) ) {
-			wp_safe_redirect( add_query_arg( 'sb_mail', 'invalid', admin_url( 'admin.php?page=sb-settings#email' ) ) );
+			wp_safe_redirect( self::back( 'email', array( 'sb_mail' => 'invalid' ) ) );
 			exit;
 		}
 		$ok = Mailer::send( $to, __( 'Sprint Booking test email', 'sprint-booking' ), __( 'If you can read this, booking emails can leave your site. Check the log in Settings, Email, for any failures.', 'sprint-booking' ), array(), 'test' );
-		wp_safe_redirect( add_query_arg( 'sb_mail', $ok ? 'sent' : 'failed', admin_url( 'admin.php?page=sb-settings#email' ) ) );
+		wp_safe_redirect( self::back( 'email', array( 'sb_mail' => $ok ? 'sent' : 'failed' ) ) );
 		exit;
 	}
 
@@ -252,6 +304,36 @@ final class Admin {
 		if ( ! current_user_can( self::SETTINGS_CAP ) ) {
 			return;
 		}
+		self::settings_body( false );
+	}
+
+	/** The whole Settings screen as HTML, for a site page ([sprint_dashboard_settings]). Buttons return to $return_url. */
+	public static function settings_html( string $return_url ): string {
+		if ( ! current_user_can( self::SETTINGS_CAP ) ) {
+			return '';
+		}
+		self::$return = $return_url;
+		self::enqueue_settings_assets();
+		ob_start();
+		self::settings_body( true );
+		self::$return = '';
+		return (string) ob_get_clean();
+	}
+
+	/** Saves the settings form when it is drawn on a site page. wp-admin's own form goes through options.php. */
+	public static function handle_save_settings(): void {
+		if ( ! current_user_can( self::SETTINGS_CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'sprint-booking' ), 403 );
+		}
+		check_admin_referer( 'sb_save_settings' );
+		// The registered sanitize callback (Settings::sanitize) runs once, inside update_option, exactly as it does for options.php.
+		$in = isset( $_POST[ Settings::OPTION ] ) && is_array( $_POST[ Settings::OPTION ] ) ? wp_unslash( $_POST[ Settings::OPTION ] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		update_option( Settings::OPTION, $in );
+		wp_safe_redirect( self::back( '', array( 'settings-updated' => 'true' ) ) );
+		exit;
+	}
+
+	private static function settings_body( bool $front ): void {
 		$c    = Settings::get();
 		$name = Settings::OPTION;
 
@@ -295,7 +377,12 @@ final class Admin {
 			echo '</div></section>';
 		};
 
-		echo '<div class="sb-ui"><div class="sb-ui-head"><div><h1>' . esc_html__( 'Settings', 'sprint-booking' ) . '</h1><p>' . esc_html__( 'The tariff below is a temporary placeholder. Replace it with your real rates before taking bookings.', 'sprint-booking' ) . '</p></div></div>';
+		if ( $front ) {
+			// The dashboard already shows the page title.
+			echo '<div class="sb-ui sb-ui--front"><p class="sb-ui-intro">' . esc_html__( 'The tariff below is a temporary placeholder. Replace it with your real rates before taking bookings.', 'sprint-booking' ) . '</p>';
+		} else {
+			echo '<div class="sb-ui"><div class="sb-ui-head"><div><h1>' . esc_html__( 'Settings', 'sprint-booking' ) . '</h1><p>' . esc_html__( 'The tariff below is a temporary placeholder. Replace it with your real rates before taking bookings.', 'sprint-booking' ) . '</p></div></div>';
+		}
 		self::notices();
 
 		$tabs = array(
@@ -319,8 +406,13 @@ final class Admin {
 		self::voice_setup_panel( $c, $panel_open, $panel_close );
 		WhatsAppAdmin::setup_panel( $c, $panel_open, $panel_close );
 
-		echo '<form method="post" action="options.php" data-sb-form>';
-		settings_fields( 'sb_settings_group' );
+		if ( $front ) {
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" data-sb-form><input type="hidden" name="action" value="sb_save_settings">';
+			self::nonce_field( 'sb_save_settings' );
+		} else {
+			echo '<form method="post" action="options.php" data-sb-form>';
+			settings_fields( 'sb_settings_group' );
+		}
 
 		$panel_open( 'fares', __( 'Fares', 'sprint-booking' ), __( 'Distance is measured automatically from pickup through every via stop to drop-off.', 'sprint-booking' ) );
 		$row( 'sb-sym', __( 'Currency symbol', 'sprint-booking' ), '<input id="sb-sym" class="sb-ui-input sb-ui-input--short" name="' . esc_attr( $name ) . '[currency_symbol]" type="text" maxlength="3" value="' . esc_attr( $c['currency_symbol'] ) . '">' );
@@ -514,7 +606,7 @@ final class Admin {
 		echo '<div class="sb-ui-sc__code" style="margin:0.5rem 0 1rem">';
 		foreach ( array( 'stripe' => 'Stripe', 'paypal' => 'PayPal' ) as $g => $label ) {
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
-			wp_nonce_field( 'sb_pay_test' );
+			self::nonce_field( 'sb_pay_test' );
 			echo '<input type="hidden" name="action" value="sb_pay_test"><input type="hidden" name="gateway" value="' . esc_attr( $g ) . '"><button class="sb-d-btn sb-d-btn--light">' . esc_html( sprintf( /* translators: %s: Stripe or PayPal */ __( 'Test %s connection', 'sprint-booking' ), $label ) ) . '</button></form>';
 		}
 		echo '</div>';
@@ -643,7 +735,7 @@ final class Admin {
 		echo '<div><dt>' . esc_html__( 'Header', 'sprint-booking' ) . '</dt><dd><code>Authorization: Bearer &lt;secret&gt;</code><br><span class="sb-ui-help">' . esc_html__( 'or X-SB-Secret: <secret>', 'sprint-booking' ) . '</span></dd></div></dl>';
 
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row">';
-		wp_nonce_field( 'sb_voice_secret' );
+		self::nonce_field( 'sb_voice_secret' );
 		echo '<input type="hidden" name="action" value="sb_voice_secret"><span class="sb-ui-label">' . esc_html__( 'Secret', 'sprint-booking' ) . '</span><div>';
 		echo $have ? '<span class="sb-d-badge sb-d-badge--success">' . esc_html__( 'A secret is set', 'sprint-booking' ) . '</span> ' : '<span class="sb-d-badge sb-d-badge--warning">' . esc_html__( 'No secret yet', 'sprint-booking' ) . '</span> ';
 		echo '<button class="sb-d-btn sb-d-btn--light"' . ( $have ? ' onclick="return confirm(\'' . esc_js( __( 'Make a new secret? The agent stops working until you give it the new one.', 'sprint-booking' ) ) . '\')"' : '' ) . '>' . esc_html( $have ? __( 'Make a new secret', 'sprint-booking' ) : __( 'Make a secret', 'sprint-booking' ) ) . '</button>';
@@ -655,7 +747,7 @@ final class Admin {
 		$open( 'email', __( 'Email', 'sprint-booking' ), __( 'Booking emails go through WordPress, so your SMTP plugin (such as WP Mail SMTP with Brevo) delivers them. Send a test, then read the log below.', 'sprint-booking' ) );
 		$me = wp_get_current_user();
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row">';
-		wp_nonce_field( 'sb_test_email' );
+		self::nonce_field( 'sb_test_email' );
 		echo '<input type="hidden" name="action" value="sb_test_email"><label for="sb-test-to">' . esc_html__( 'Send a test email to', 'sprint-booking' ) . '</label><div><input id="sb-test-to" class="sb-ui-input" type="email" name="to" required value="' . esc_attr( $me->user_email ) . '"> <button class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Send test', 'sprint-booking' ) . '</button></div></form>';
 
 		$log = Mailer::log_entries();
@@ -680,7 +772,9 @@ final class Admin {
 		$stops = array(
 			'overview' => __( 'Overview', 'sprint-booking' ),
 			'bookings' => __( 'Bookings', 'sprint-booking' ),
+			'settings' => __( 'Settings', 'sprint-booking' ),
 		);
+		$urls['settings'] = Pages::url( Dashboard::SETTINGS_TAG );
 		echo '<div class="sb-ui-route"><div class="sb-ui-route__line" aria-hidden="true"></div><ol class="sb-ui-route__stops">';
 		foreach ( $stops as $key => $label ) {
 			$url = $urls[ $key ] ?? '';
@@ -690,11 +784,11 @@ final class Admin {
 				: '<span>' . esc_html__( 'No page yet', 'sprint-booking' ) . '</span>';
 			echo '</div></li>';
 		}
-		echo '</ol><div class="sb-ui-route__action"><p>' . esc_html__( 'Overview and Bookings are separate pages. The side menu links between them.', 'sprint-booking' ) . '</p>';
-		if ( empty( $urls['overview'] ) || empty( $urls['bookings'] ) ) {
+		echo '</ol><div class="sb-ui-route__action"><p>' . esc_html__( 'Overview, Bookings and Settings are separate pages. The side menu links between them. Settings is only shown to administrators.', 'sprint-booking' ) . '</p>';
+		if ( empty( $urls['overview'] ) || empty( $urls['bookings'] ) || empty( $urls['settings'] ) ) {
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
-			wp_nonce_field( 'sb_create_dashboard' );
-			echo '<input type="hidden" name="action" value="sb_create_dashboard"><button class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Create the two dashboard pages', 'sprint-booking' ) . '</button></form>';
+			self::nonce_field( 'sb_create_dashboard' );
+			echo '<input type="hidden" name="action" value="sb_create_dashboard"><button class="sb-d-btn sb-d-btn--primary">' . esc_html__( 'Create the dashboard pages', 'sprint-booking' ) . '</button></form>';
 		}
 		echo '</div></div>';
 	}
@@ -705,7 +799,7 @@ final class Admin {
 		echo '<article class="sb-ui-sc"><div class="sb-ui-sc__top"><h3 class="sb-ui-sc__title">' . esc_html( $sc['title'] ) . ' <span class="sb-d-badge sb-d-badge--' . ( __( 'Selected roles', 'sprint-booking' ) === $sc['audience'] ? 'primary' : 'success' ) . '">' . esc_html( $sc['audience'] ) . '</span></h3>';
 		echo '<div class="sb-ui-sc__code"><code>' . esc_html( $basic ) . '</code><button type="button" class="sb-d-btn sb-d-btn--light" data-sb-copy="' . esc_attr( $basic ) . '">' . esc_html__( 'Copy', 'sprint-booking' ) . '</button>';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
-		wp_nonce_field( 'sb_create_page' );
+		self::nonce_field( 'sb_create_page' );
 		echo '<input type="hidden" name="action" value="sb_create_page"><input type="hidden" name="tag" value="' . esc_attr( $sc['tag'] ) . '"><button class="sb-d-btn sb-d-btn--light">' . esc_html__( 'Create page', 'sprint-booking' ) . '</button></form></div></div>';
 		echo '<p class="sb-ui-help" style="margin:0">' . esc_html( $sc['description'] ) . '</p>';
 

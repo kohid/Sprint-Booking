@@ -58,6 +58,7 @@
 		alert: [ [ 'path', { d: 'M12 4 3 20h18z' } ], [ 'line', { x1: 12, y1: 10, x2: 12, y2: 14 } ], [ 'line', { x1: 12, y1: 17, x2: 12, y2: 17.5 } ] ],
 		pound: [ [ 'path', { d: 'M17 7a4 4 0 0 0-8 1v3H7m2 0v5H7m0 0h10' } ] ],
 		inbox: [ [ 'path', { d: 'M4 13l2.5-8h11L20 13v6H4z' } ], [ 'path', { d: 'M4 13h5l1 2h4l1-2h5' } ] ],
+		settings: [ [ 'line', { x1: 4, y1: 7, x2: 20, y2: 7 } ], [ 'circle', { cx: 9, cy: 7, r: 2.2 } ], [ 'line', { x1: 4, y1: 17, x2: 20, y2: 17 } ], [ 'circle', { cx: 15, cy: 17, r: 2.2 } ] ],
 		out: [ [ 'path', { d: 'M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4' } ], [ 'polyline', { points: '15 8 19 12 15 16' } ], [ 'line', { x1: 9, y1: 12, x2: 19, y2: 12 } ] ]
 	};
 
@@ -808,7 +809,7 @@
 
 	// ── App shell ───────────────────────────────────────────────
 
-	var TITLES = { overview: 'Overview', bookings: 'Bookings' };
+	var TITLES = { overview: 'Overview', bookings: 'Bookings', settings: 'Settings' };
 
 	function mount( root ) {
 		var shell = root.getAttribute( 'data-shell' ) || 'none';
@@ -818,6 +819,7 @@
 			view: root.getAttribute( 'data-view' ) || 'overview',
 			bookingsUrl: root.getAttribute( 'data-bookings-url' ) || '',
 			overviewUrl: root.getAttribute( 'data-overview-url' ) || '',
+			settingsUrl: root.getAttribute( 'data-settings-url' ) || '',
 			paged: shell === 'aside', // The menu moves between pages; there is no in-page switching or #hash.
 			perPage: parseInt( root.getAttribute( 'data-per-page' ), 10 ) || 25,
 			filters: { q: '', status: root.getAttribute( 'data-status' ) || '', leg: '', from: '', to: '', sort: 'newest' },
@@ -842,6 +844,9 @@
 
 		var full = root.getAttribute( 'data-full' );
 		if ( full ) { root.classList.add( 'sb-d-full', 'sb-d-full--' + full ); }
+		// The Settings screen arrives as server-built markup; keep it before the root is emptied.
+		var staticNode = root.querySelector( '[data-sb-static]' );
+		if ( staticNode ) { staticNode.parentNode.removeChild( staticNode ); }
 		root.textContent = '';
 		var content = el( 'div', { 'class': 'sb-d-content', 'data-sb-content': '' } );
 		var title = el( 'h1', { 'class': 'sb-d-title' } );
@@ -853,19 +858,28 @@
 		function show( view ) {
 			app.view = view;
 			title.textContent = TITLES[ view ];
+			refresh.hidden = view === 'settings';
 			Object.keys( navButtons ).forEach( function ( k ) { navButtons[ k ].setAttribute( 'aria-current', k === view ? 'page' : 'false' ); navButtons[ k ].classList.toggle( 'is-active', k === view ); } );
 			content.textContent = '';
+			if ( view === 'settings' ) {
+				if ( staticNode ) { staticNode.hidden = false; content.appendChild( staticNode ); }
+				else { content.appendChild( empty( 'inbox', 'Settings are not available here', 'Open them from the Taxi Bookings menu in WordPress.', null ) ); }
+				return;
+			}
 			( view === 'bookings' ? renderBookings : renderOverview )( app, content );
 		}
 
 		if ( shell === 'aside' ) {
 			var nav = el( 'nav', { 'class': 'sb-d-nav', 'aria-label': 'Dashboard' } );
-			[ [ 'overview', 'grid', 'Overview' ], [ 'bookings', 'list', 'Bookings' ] ].forEach( function ( v ) {
+			var items = [ [ 'overview', 'grid', 'Overview' ], [ 'bookings', 'list', 'Bookings' ] ];
+			if ( CFG.canSettings ) { items.push( [ 'settings', 'settings', 'Settings' ] ); } // Administrators only; the server checks again.
+			var urlFor = function ( view ) { return view === 'bookings' ? app.bookingsUrl : ( view === 'settings' ? ( app.settingsUrl || CFG.settingsAdminUrl || '' ) : app.overviewUrl ); };
+			items.forEach( function ( v ) {
 				var count = el( 'span', { 'class': 'sb-d-nav__count', hidden: true } );
 				var b = el( 'button', { type: 'button', 'class': 'sb-d-nav__item', onclick: function () {
-					var url = v[ 0 ] === 'bookings' ? app.bookingsUrl : app.overviewUrl;
+					var url = urlFor( v[ 0 ] );
 					if ( url && v[ 0 ] !== app.view ) { window.location.href = url; }
-				}, title: ( v[ 0 ] === 'bookings' ? app.bookingsUrl : app.overviewUrl ) ? null : 'Create this page in Settings, Shortcodes' }, [ icon( v[ 1 ] ), el( 'span', { text: v[ 2 ] } ), v[ 0 ] === 'bookings' ? count : null ] );
+				}, title: urlFor( v[ 0 ] ) ? null : 'Create this page in Settings, Shortcodes' }, [ icon( v[ 1 ] ), el( 'span', { text: v[ 2 ] } ), v[ 0 ] === 'bookings' ? count : null ] );
 				b._count = count;
 				navButtons[ v[ 0 ] ] = b;
 				nav.appendChild( b );

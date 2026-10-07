@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Sprint Booking
  * Description:       Taxi booking for Inverness: a route-based booking form with address suggestions, via stops, automatic distance pricing, return trips, customer accounts and a bookings list.
- * Version:           0.14.0
+ * Version:           0.15.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * License:           GPL v2 or later
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SB_VERSION', '0.14.0' );
+define( 'SB_VERSION', '0.15.0' );
 define( 'SB_DB_VERSION', '10' );
 define( 'SB_FILE', __FILE__ );
 define( 'SB_DIR', plugin_dir_path( __FILE__ ) );

@@ -51,7 +51,7 @@ final class Pages {
 	}
 
 	public static function forget(): void {
-		foreach ( array( Profile::TAG, MyBookings::TAG, Shortcode::TAG ) as $tag ) {
+		foreach ( array( Profile::TAG, MyBookings::TAG, Shortcode::TAG, Dashboard::SETTINGS_TAG ) as $tag ) {
 			delete_transient( self::TRANSIENT . md5( $tag ) );
 		}
 	}

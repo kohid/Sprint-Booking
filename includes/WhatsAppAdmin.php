@@ -147,7 +147,7 @@ final class WhatsAppAdmin {
 
 		$form = static function ( string $op, string $inner ): void {
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="sb-ui-row">';
-			wp_nonce_field( 'sb_wa' );
+			Admin::nonce_field( 'sb_wa' );
 			echo '<input type="hidden" name="action" value="sb_wa"><input type="hidden" name="op" value="' . esc_attr( $op ) . '">' . $inner . '</form>'; // phpcs:ignore WordPress.Security.EscapeOutput -- built from escaped parts.
 		};
 		$form( 'check', '<span class="sb-ui-label">' . esc_html__( 'Keys', 'sprint-booking' ) . '</span><div><button class="sb-d-btn sb-d-btn--light">' . esc_html__( 'Check the connection', 'sprint-booking' ) . '</button></div>' );
@@ -188,7 +188,7 @@ final class WhatsAppAdmin {
 			$out = array( 'ok' => ! is_wp_error( $res ), 'message' => is_wp_error( $res ) ? $res->get_error_message() : $res );
 		}
 		set_transient( 'sb_wa_result_' . get_current_user_id(), $out, 120 );
-		wp_safe_redirect( admin_url( 'admin.php?page=sb-settings#whatsapp' ) );
+		wp_safe_redirect( Admin::back( 'whatsapp' ) );
 		exit;
 	}
 }

@@ -5,6 +5,7 @@
  *   [sprint_dashboard]            side menu + Overview and Bookings
  *   [sprint_dashboard_overview]   the Overview only
  *   [sprint_dashboard_bookings]   the Bookings list only
+ *   [sprint_dashboard_settings]   the plugin's Settings (administrators only), in the same shell
  *
  * The HTML only carries a mount point. Data arrives over the staff REST routes, which check
  * the capability on every request, so showing the shortcode to the wrong person shows nothing.
@@ -21,6 +22,7 @@ final class Dashboard {
 	public const SHELL_TAG    = 'sprint_dashboard';
 	public const OVERVIEW_TAG = 'sprint_dashboard_overview';
 	public const BOOKINGS_TAG = 'sprint_dashboard_bookings';
+	public const SETTINGS_TAG = 'sprint_dashboard_settings';
 
 	/** Status => colour family used for badges (Metronic's "light" badge variants). */
 	public const TONES = array(
@@ -36,6 +38,7 @@ final class Dashboard {
 		add_shortcode( self::SHELL_TAG, array( self::class, 'shell' ) );
 		add_shortcode( self::OVERVIEW_TAG, array( self::class, 'overview' ) );
 		add_shortcode( self::BOOKINGS_TAG, array( self::class, 'bookings' ) );
+		add_shortcode( self::SETTINGS_TAG, array( self::class, 'settings' ) );
 		add_action( 'save_post_page', array( self::class, 'forget_pages' ) );
 		add_action( 'deleted_post', array( self::class, 'forget_pages' ) );
 		add_action( 'trashed_post', array( self::class, 'forget_pages' ) );
@@ -75,9 +78,45 @@ final class Dashboard {
 				array(
 					'overview-url' => $urls['overview'],
 					'bookings-url' => $urls['bookings'],
+					'settings-url' => self::settings_url(),
 					'full'         => self::yes( $a['fullscreen'] ) ? 'site' : '',
 				)
 			)
+		);
+	}
+
+	/** Where the Settings menu item goes: the page holding [sprint_dashboard_settings], else the wp-admin screen. Empty for anyone but administrators. */
+	public static function settings_url(): string {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return '';
+		}
+		$page = Pages::url( self::SETTINGS_TAG );
+		return '' !== $page ? $page : admin_url( 'admin.php?page=sb-settings' );
+	}
+
+	/** The plugin's Settings on a site page, inside the dashboard shell. Administrators only. */
+	public static function settings( $atts ): string {
+		$a = shortcode_atts( array( 'overview_url' => '', 'bookings_url' => '', 'fullscreen' => 'yes' ), (array) $atts, self::SETTINGS_TAG );
+		return self::guarded(
+			static function () use ( $a ): string {
+				if ( ! current_user_can( 'manage_options' ) ) {
+					self::enqueue_notice_style();
+					return '<div class="sb-dash-notice"><p><strong>' . esc_html__( 'Administrators only', 'sprint-booking' ) . '</strong></p><p>' . esc_html__( 'Only an administrator can change the booking settings.', 'sprint-booking' ) . '</p></div>';
+				}
+				$found = self::page_urls();
+				$here  = self::current_url();
+				return self::mount(
+					'aside',
+					'settings',
+					array(
+						'overview-url' => esc_url_raw( (string) $a['overview_url'] ) ?: ( $found['overview'] ?? '' ),
+						'bookings-url' => esc_url_raw( (string) $a['bookings_url'] ) ?: ( $found['bookings'] ?? '' ),
+						'settings-url' => $here,
+						'full'         => self::yes( $a['fullscreen'] ) ? 'site' : '',
+					),
+					Admin::settings_html( $here )
+				);
+			}
 		);
 	}
 
@@ -211,14 +250,16 @@ final class Dashboard {
 	 *
 	 * @param array<string,string> $data Extra data-* attributes.
 	 */
-	public static function mount( string $shell, string $view, array $data ): string {
+	public static function mount( string $shell, string $view, array $data, string $inner = '' ): string {
 		self::enqueue();
 
 		$attrs = ' data-sb-dash data-shell="' . esc_attr( $shell ) . '" data-view="' . esc_attr( $view ) . '"';
 		foreach ( $data as $k => $v ) {
 			$attrs .= ' data-' . esc_attr( $k ) . '="' . esc_attr( $v ) . '"';
 		}
-		return '<div class="sb-dash"' . $attrs . '><noscript><p class="sb-dash-notice">' . esc_html__( 'The dashboard needs JavaScript.', 'sprint-booking' ) . '</p></noscript></div>';
+		// $inner is server-built markup the script moves into the page (the Settings screen); it is hidden until then.
+		$static = '' !== $inner ? '<div data-sb-static hidden>' . $inner . '</div>' : '';
+		return '<div class="sb-dash"' . $attrs . '><noscript><p class="sb-dash-notice">' . esc_html__( 'The dashboard needs JavaScript.', 'sprint-booking' ) . '</p></noscript>' . $static . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput -- $inner is escaped where it is built.
 	}
 
 	public static function enqueue(): void {
@@ -283,6 +324,8 @@ final class Dashboard {
 				'initials' => strtoupper( mb_substr( $name, 0, 1 ) ) . ( str_contains( $name, ' ' ) ? strtoupper( mb_substr( (string) strrchr( $name, ' ' ), 1, 1 ) ) : '' ),
 			),
 			'logoutUrl' => wp_logout_url( self::current_url() ),
+			'canSettings' => current_user_can( 'manage_options' ),
+			'settingsAdminUrl' => current_user_can( 'manage_options' ) ? admin_url( 'admin.php?page=sb-settings' ) : '',
 			'statuses'  => $statuses,
 			'services'  => $services,
 			'vehicles'  => $vehicles,

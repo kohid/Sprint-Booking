@@ -4,6 +4,7 @@ const { chromium } = require('playwright');
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '../..');
 const OUT = process.env.SB_E2E_OUT || __dirname + '/out';
 fs.mkdirSync(OUT, { recursive: true });
@@ -12,7 +13,7 @@ const STATUSES = {
   new: { label: 'New', tone: 'warning' }, quote_requested: { label: 'Quote requested', tone: 'info' }, confirmed: { label: 'Confirmed', tone: 'primary' },
   assigned: { label: 'Driver assigned', tone: 'teal' }, completed: { label: 'Completed', tone: 'success' }, cancelled: { label: 'Cancelled', tone: 'muted' },
 };
-const CONFIG = { rest: 'http://dash.test/wp-json/sprint-booking/v1/', nonce: 'n0nce', symbol: '£', site: 'Inverness Taxis', user: { name: 'Dee Dispatch', initials: 'DD' }, logoutUrl: '/logout', statuses: STATUSES, services: { airport: 'Airport Transfer', corporate: 'Corporate Service', golf: 'Golf Transfer', wedding: 'Wedding Cars', minibus: 'Minibus Service', tours: 'Inverness Tours' }, needsAction: ['new', 'quote_requested'], vehicles: { saloon: { label: 'Saloon', seats: 4, bags: 2, minibus: false }, mpv: { label: 'MPV', seats: 6, bags: 4, minibus: false }, minibus8: { label: 'Minibus (8 seats)', seats: 8, bags: 8, minibus: true } }, minibusOnly: { airport: false, corporate: false, wedding: false }, titles: ['Mr', 'Mrs', 'Dr'], maxVias: 3 };
+const CONFIG = { rest: 'http://dash.test/wp-json/sprint-booking/v1/', nonce: 'n0nce', symbol: '£', site: 'Inverness Taxis', user: { name: 'Dee Dispatch', initials: 'DD' }, logoutUrl: '/logout', statuses: STATUSES, services: { airport: 'Airport Transfer', corporate: 'Corporate Service', golf: 'Golf Transfer', wedding: 'Wedding Cars', minibus: 'Minibus Service', tours: 'Inverness Tours' }, needsAction: ['new', 'quote_requested'], canSettings: true, settingsAdminUrl: 'http://dash.test/wp-admin/settings', vehicles: { saloon: { label: 'Saloon', seats: 4, bags: 2, minibus: false }, mpv: { label: 'MPV', seats: 6, bags: 4, minibus: false }, minibus8: { label: 'Minibus (8 seats)', seats: 8, bags: 8, minibus: true } }, minibusOnly: { airport: false, corporate: false, wedding: false }, titles: ['Mr', 'Mrs', 'Dr'], maxVias: 3 };
 
 // ── Fake bookings (relative to now) ──
 const p2 = n => String(n).padStart(2, '0');
@@ -85,7 +86,7 @@ function stats() {
     month_bookings: 41, month_change: 28, month_revenue: 184250, revenue_change: -6, by_status: by, series, calls: { today: { received: 7, booked: 4, cancelled: 1, edited: 0, transferred: 2, bypass: 1, blocked: 0 }, total: {}, days: [13, 12, 11, 10, 9, 8, 7].map((n, i) => ({ day: wall(new Date(Date.now() - (6 - i) * 86400000)).slice(0, 10), received: n, booked: n - 3, cancelled: 0, edited: 0, transferred: i % 3, bypass: 0, blocked: 0 })) }, next: upcoming, recent: rows.slice().sort((a, b) => a.created.iso < b.created.iso ? 1 : -1).slice(0, 6) };
 }
 
-async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewport = { width: 1280, height: 900 } } = {}) {
+async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewport = { width: 1280, height: 900 }, admin = true } = {}) {
   const ctx = await browser.newContext({ viewport, acceptDownloads: true });
   const page = await ctx.newPage();
   const log = { errors: [], edits: [], posts: [], urls: [], nonces: [] };
@@ -95,11 +96,16 @@ async function setup(browser, { mode = 'shell', attrs = '', fail = false, viewpo
   await page.route('http://dash.test/**', async route => {
     const req = route.request(), url = new URL(req.url());
     const json = (b, s = 200) => route.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(b) });
+    if (url.pathname === '/settings/') {
+      const cfg = Object.assign({}, CONFIG, { canSettings: admin });
+      const panel = execFileSync('php', [ROOT + '/tests/e2e/admin-build.php', 'wa'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).replace(/^[\s\S]*<body>/, '').replace(/<\/body>[\s\S]*$/, '').replace(/<script[\s\S]*?<\/script>/g, '');
+      return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Settings harness</title><link rel="stylesheet" href="/flatpickr.css"><link rel="stylesheet" href="/dashboard.css"><style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#fff}</style></head><body><div class="sb-dash" data-sb-dash data-shell="aside" data-view="settings" data-overview-url="http://dash.test/overview/" data-bookings-url="http://dash.test/bookings/" data-settings-url="http://dash.test/settings/" data-full="site"><div data-sb-static hidden>${panel}</div></div><script>window.SB_DASH=${JSON.stringify(cfg)}</script><script src="/flatpickr.js"></script><script src="/dashboard.js"></script></body></html>` });
+    }
     if (url.pathname === '/' || url.pathname === '/overview/' || url.pathname === '/bookings/') {
-      const URLS = 'data-overview-url="http://dash.test/overview/" data-bookings-url="http://dash.test/bookings/"';
+      const URLS = 'data-overview-url="http://dash.test/overview/" data-bookings-url="http://dash.test/bookings/" data-settings-url="http://dash.test/settings/"';
       const pv = url.pathname === '/bookings/' ? 'bookings' : 'overview';
       const data = mode === 'paged' ? `data-shell="aside" data-view="${pv === 'overview' && url.pathname === '/' ? 'bookings' : pv}" ${URLS} data-full="site"` : mode === 'shell' ? `data-shell="aside" data-view="${pv}" ${URLS}` : mode === 'overview' ? 'data-shell="none" data-view="overview" data-bookings-url="http://dash.test/bookings/"' : 'data-shell="none" data-view="bookings" ' + attrs;
-      return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard harness</title><link rel="stylesheet" href="/flatpickr.css"><link rel="stylesheet" href="/dashboard.css"><style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#fff}</style></head><body><div class="sb-dash" data-sb-dash ${data}></div><script>window.SB_DASH=${JSON.stringify(CONFIG)}</script><script src="/flatpickr.js"></script><script src="/dashboard.js"></script></body></html>` });
+      return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard harness</title><link rel="stylesheet" href="/flatpickr.css"><link rel="stylesheet" href="/dashboard.css"><style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#fff}</style></head><body><div class="sb-dash" data-sb-dash ${data}></div><script>window.SB_DASH=${JSON.stringify(Object.assign({}, CONFIG, { canSettings: admin }))}</script><script src="/flatpickr.js"></script><script src="/dashboard.js"></script></body></html>` });
     }
     if (url.pathname === '/flatpickr.css') return route.fulfill({ contentType: 'text/css', body: fs.readFileSync(ROOT + '/assets/vendor/flatpickr/flatpickr.min.css') });
     if (url.pathname === '/flatpickr.js') return route.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(ROOT + '/assets/vendor/flatpickr/flatpickr.min.js') });
@@ -149,7 +155,7 @@ async function findRef(page, ref) {
   // ── Shell: overview ──
   let { page, ctx, log } = await setup(browser);
   await page.waitForSelector('.sb-d-kpi');
-  assert.strictEqual(await page.locator('.sb-d-aside .sb-d-nav__item').count(), 2, 'aside has Overview and Bookings');
+  assert.deepStrictEqual(await page.locator('.sb-d-aside .sb-d-nav__item').allTextContents().then(a => a.map(t => t.replace(/\d+$/, '').trim())), ['Overview', 'Bookings', 'Settings'], 'the side menu: Overview, Bookings and Settings for an administrator');
   assert.strictEqual(await page.locator('.sb-d-kpi').count(), 4, 'four stat tiles');
   assert.strictEqual(await page.locator('.sb-d-chart__bar').count(), 14, '14-day chart');
   assert((await page.locator('.sb-d-chart__bar.is-today').count()) === 1, "today's bar is highlighted");
@@ -300,6 +306,28 @@ async function findRef(page, ref) {
   assert.strictEqual(log.edits.length, editsBefore, 'nothing was sent');
   await page.click('.sb-d-edit button >> text=Cancel'); await page.waitForSelector('.sb-d-edit', { state: 'detached' });
   await page.keyboard.press('Escape');
+
+  // ── Settings in the shell (administrators) ──
+  const st = await setup(browser); const sp = st.page;
+  await sp.goto('http://dash.test/overview/'); await sp.waitForSelector('.sb-d-kpi');
+  await Promise.all([sp.waitForURL('**/settings/'), sp.click('.sb-d-nav__item >> text=Settings')]);
+  await sp.waitForSelector('.sb-d-content [data-sb-panel]');
+  assert.strictEqual((await sp.textContent('.sb-d-title')).trim(), 'Settings', 'the page title');
+  assert(await sp.locator('.sb-d-header .sb-d-btn >> text=Refresh').isHidden(), 'no Refresh button on Settings');
+  assert.strictEqual(await sp.getAttribute('.sb-d-nav__item.is-active', 'aria-current'), 'page');
+  assert.strictEqual((await sp.textContent('.sb-d-nav__item.is-active')).trim(), 'Settings', 'the menu marks Settings as the open page');
+  assert(await sp.locator('.sb-d-content [data-sb-panel=whatsapp]').count() >= 1 && await sp.locator('.sb-d-content .sb-ui-steps').count() >= 1, 'the settings panels are inside the dashboard content');
+  assert.strictEqual(await sp.locator('[data-sb-static]').count(), 1, 'the markup was moved, not copied');
+  assert((await sp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0, 'no sideways scroll on Settings');
+  await sp.screenshot({ path: OUT + '/d10-settings.png', fullPage: false });
+  await Promise.all([sp.waitForURL('**/overview/'), sp.click('.sb-d-nav__item >> text=Overview')]);
+  await st.ctx.close();
+
+  // Someone who is not an administrator is not offered Settings at all.
+  const na = await setup(browser, { admin: false });
+  await na.page.waitForSelector('.sb-d-kpi');
+  assert.deepStrictEqual(await na.page.locator('.sb-d-aside .sb-d-nav__item').allTextContents().then(a => a.map(t => t.replace(/\d+$/, '').trim())), ['Overview', 'Bookings'], 'no Settings item for dispatch staff');
+  await na.ctx.close();
 
   // ── CSV export ──
   await page.fill('input[type=search]', ''); await page.waitForFunction(() => document.querySelectorAll('.sb-d-table tbody tr').length === 25);

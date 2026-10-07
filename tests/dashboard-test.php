@@ -150,6 +150,7 @@ t( 'bare shortcode means overview', 'overview' === Dashboard::view_in( 'Hi [spri
 t( 'view="bookings"', 'bookings' === Dashboard::view_in( '[sprint_dashboard view="bookings"]' ) );
 t( "view='bookings' with single quotes", 'bookings' === Dashboard::view_in( "[sprint_dashboard view='bookings']" ) );
 t( 'Elementor JSON with escaped quotes', 'bookings' === Dashboard::view_in( '{"widgetType":"shortcode","settings":{"shortcode":"[sprint_dashboard view=\\"bookings\\"]"}}' ) );
+t( 'the Settings page is not mistaken for a dashboard view', '' === Dashboard::view_in( 'Hi [sprint_dashboard_settings] there' ) && 'overview' === Dashboard::view_in( '[sprint_dashboard_settings] and [sprint_dashboard]' ) );
 t( 'Elementor JSON, overview', 'overview' === Dashboard::view_in( '{"shortcode":"[sprint_dashboard view=\\"overview\\"]"}' ) );
 t( 'spaces around the equals sign', 'bookings' === Dashboard::view_in( '[sprint_dashboard  view = "bookings" fullscreen="no"]' ) );
 t( 'the overview-only shortcode counts as overview', 'overview' === Dashboard::view_in( '[sprint_dashboard_overview]' ) );

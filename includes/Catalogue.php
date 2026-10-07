@@ -190,6 +190,31 @@ final class Catalogue {
 				),
 				'example'     => '[sprint_dashboard_bookings status="needs_action" per_page="20"]',
 			),
+			array(
+				'tag'         => Dashboard::SETTINGS_TAG,
+				'title'       => __( 'Dashboard: Settings', 'sprint-booking' ),
+				'audience'    => __( 'Administrators only', 'sprint-booking' ),
+				'description' => __( 'The plugin\'s Settings (fares, rules, cars, services, payments, phone agent, WhatsApp, email, shortcodes, demo) on a page of its own, inside the same dashboard with the side menu. The menu item appears for administrators only; everyone else is told it is for administrators. wp-admin\'s Settings screen keeps working too.', 'sprint-booking' ),
+				'page_title'  => __( 'Dashboard settings', 'sprint-booking' ),
+				'attributes'  => array(
+					array(
+						'name'    => 'overview_url',
+						'default' => __( 'found automatically', 'sprint-booking' ),
+						'help'    => __( 'Address of the page holding the overview.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'bookings_url',
+						'default' => __( 'found automatically', 'sprint-booking' ),
+						'help'    => __( 'Address of the page holding the bookings list.', 'sprint-booking' ),
+					),
+					array(
+						'name'    => 'fullscreen',
+						'default' => 'yes',
+						'help'    => __( 'yes fills the full browser width and height. Use no to keep it inside the page column.', 'sprint-booking' ),
+					),
+				),
+				'example'     => '[sprint_dashboard_settings]',
+			),
 		);
 	}
 

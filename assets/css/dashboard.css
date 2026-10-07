@@ -824,3 +824,12 @@ button.sb-d-legend__btn:focus-visible { outline: none; box-shadow: var(--d-ring)
 .sb-dash .flatpickr-calendar.noCalendar { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
 .sb-dash .flatpickr-calendar.noCalendar .flatpickr-time { width: 100%; max-width: 100%; }
 .sb-d-drawer__body { overflow-x: hidden; }
+
+/* ── Settings inside the dashboard shell ── */
+.sb-dash .sb-ui--front { margin: 0; max-width: none; }
+.sb-dash .sb-ui-intro { margin: 0 0 1rem; color: var(--d-muted); }
+.sb-dash .notice { margin: 0 0 1rem; padding: 0.75rem 1rem; border-left: 4px solid var(--d-line2); border-radius: var(--d-radius); background: #fff; box-shadow: var(--d-shadow); }
+.sb-dash .notice p { margin: 0; }
+.sb-dash .notice-success { border-left-color: #0a8f5a; }
+.sb-dash .notice-error, .sb-dash .notice-warning { border-left-color: var(--d-red); }
+.sb-d-content .sb-ui-savebar { position: sticky; bottom: 0; }
